@@ -1,0 +1,2205 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GMod Panel · X</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --blue: #6b86ff;
+      --blue-2: #7b82f5;
+      --blue-3: #9a8ff0;
+      --navy: #f1f5f9;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --line: #243044;
+      --bg: #0b1020;
+      --card: #121a2b;
+      --input: #0d1424;
+      --ok: #34d399;
+      --ok-bg: rgba(16,185,129,.12);
+      --bad: #f87171;
+      --bad-bg: rgba(239,68,68,.12);
+      --warn: #fbbf24;
+      --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+      --shadow-lg: 0 28px 70px rgba(79, 110, 247, 0.18);
+      --radius: 18px;
+      --radius-sm: 12px;
+      --grad: linear-gradient(135deg, #4f6ef7 0%, #7b82f5 55%, #9a8ff0 100%);
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(900px 420px at 8% -5%, rgba(79,110,247,.22), transparent 60%),
+        radial-gradient(800px 380px at 95% 0%, rgba(155,143,240,.16), transparent 55%),
+        linear-gradient(rgba(100,116,139,.12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(100,116,139,.12) 1px, transparent 1px),
+        var(--bg);
+      background-size: auto, auto, 42px 42px, 42px 42px, auto;
+      color-scheme: dark;
+    }
+
+    a { color: inherit; text-decoration: none; }
+    button, input, textarea, select { font: inherit; }
+    .hidden { display: none !important; }
+
+    /* —— Login —— */
+    #login {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .login-card {
+      width: min(420px, 100%);
+      background: linear-gradient(180deg, #152036, #121a2b);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow-lg);
+      padding: 36px 32px;
+      position: relative;
+      overflow: hidden;
+    }
+    .login-card::before {
+      content: "";
+      position: absolute; inset: 0 0 auto 0; height: 4px;
+      background: var(--grad);
+    }
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 800; font-size: 1.15rem; color: var(--navy);
+      letter-spacing: -0.02em; margin-bottom: 8px;
+    }
+    .brand-mark {
+      width: 34px; height: 34px; border-radius: 11px;
+      background: var(--grad); display: grid; place-items: center;
+      color: #fff; box-shadow: 0 8px 18px rgba(79,110,247,.35);
+    }
+    .brand-mark svg { width: 18px; height: 18px; }
+    .login-card h1 {
+      margin: 18px 0 6px; font-size: 1.55rem; letter-spacing: -0.03em; color: var(--navy);
+    }
+    .login-card h1 span { color: var(--blue); }
+    .login-card p { margin: 0 0 22px; color: var(--muted); line-height: 1.5; }
+    .login-card form { display: grid; gap: 12px; }
+    .err { color: var(--bad); font-size: 0.88rem; min-height: 1.2em; }
+
+    /* —— App shell —— */
+    #app { min-height: 100vh; display: flex; flex-direction: column; }
+    .topbar {
+      position: sticky; top: 0; z-index: 20;
+      backdrop-filter: blur(16px);
+      background: rgba(11,16,32,.82);
+      border-bottom: 1px solid var(--line);
+      padding: 14px 22px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    }
+    .topbar-left, .topbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 7px 12px; border-radius: 999px;
+      font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em;
+      background: var(--ok-bg); color: var(--ok); border: 1px solid rgba(52,211,153,.28);
+    }
+    .status-badge.off { background: var(--bad-bg); color: var(--bad); border-color: rgba(248,113,113,.28); }
+    .status-badge .dot {
+      width: 8px; height: 8px; border-radius: 50%; background: currentColor;
+      box-shadow: 0 0 0 3px rgba(16,185,129,.18);
+    }
+    .status-badge.off .dot { box-shadow: 0 0 0 3px rgba(239,68,68,.15); }
+
+    .connect-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 8px 14px; border-radius: 999px;
+      background: var(--card); border: 1px solid var(--line);
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.84rem; color: var(--navy); cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,.25);
+      transition: border-color .15s, transform .05s;
+    }
+    .connect-chip:hover { border-color: #4f6ef7; }
+    .connect-chip:active { transform: translateY(1px); }
+    .connect-chip small { color: var(--muted); font-family: inherit; font-weight: 600; }
+
+    .players-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: 999px;
+      background: var(--card); border: 1px solid rgba(52,211,153,.28);
+      font-weight: 800; font-size: 0.88rem; color: var(--navy);
+      box-shadow: 0 4px 12px rgba(0,0,0,.25);
+      white-space: nowrap;
+    }
+    .players-chip .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--ok);
+      box-shadow: 0 0 0 3px rgba(16,185,129,.2);
+      flex-shrink: 0;
+    }
+    .players-chip.off {
+      border-color: var(--line);
+      color: var(--muted);
+    }
+    .players-chip.off .dot {
+      background: var(--muted);
+      box-shadow: 0 0 0 3px rgba(148,163,184,.15);
+    }
+
+    .shell {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 18px;
+      padding: 22px;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+      align-content: start;
+      align-items: start;
+    }
+
+    .sidebar {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 14px;
+      height: fit-content;
+      position: sticky; top: 86px;
+    }
+    .nav-btn {
+      width: 100%;
+      display: flex; align-items: center; gap: 10px;
+      border: 0; background: transparent; color: var(--muted);
+      padding: 11px 12px; border-radius: 12px;
+      cursor: pointer; font-weight: 600; font-size: 0.92rem;
+      transition: background .15s, color .15s;
+      text-align: left;
+    }
+    .nav-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+    .nav-btn:hover { background: rgba(148,163,184,.08); color: var(--navy); }
+    .nav-btn.active {
+      background: linear-gradient(135deg, rgba(79,110,247,.22), rgba(155,143,240,.16));
+      color: #a5b4fc;
+    }
+    .side-foot {
+      margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
+      display: grid; gap: 8px;
+    }
+    .nav-scroll {
+      display: contents;
+    }
+
+    .main { display: grid; gap: 16px; min-width: 0; align-content: start; }
+
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 900px) { .hero-stats { grid-template-columns: 1fr; } }
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow);
+      padding: 12px 14px;
+      display: flex; gap: 12px; align-items: center;
+    }
+    .stat-ico {
+      width: 40px; height: 40px; border-radius: 11px;
+      background: linear-gradient(135deg, rgba(79,110,247,.22), rgba(155,143,240,.18));
+      color: #a5b4fc; display: grid; place-items: center; flex-shrink: 0;
+      overflow: hidden;
+    }
+    .stat-ico svg {
+      width: 22px; height: 22px;
+      display: block;
+      flex-shrink: 0;
+    }
+    #resStats .stat-ico {
+      width: 40px; height: 40px; border-radius: 11px;
+    }
+    #resStats .stat-ico svg {
+      width: 22px; height: 22px;
+    }
+    .stat .k { font-size: 0.75rem; color: var(--muted); font-weight: 600; margin-bottom: 2px; }
+    .stat .v { font-size: 0.95rem; font-weight: 700; color: var(--navy); overflow-wrap: anywhere; word-break: break-word; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+    .card-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      margin-bottom: 14px;
+    }
+    .card-head h2 {
+      margin: 0; font-size: 1.05rem; letter-spacing: -0.02em; color: var(--navy);
+    }
+    .card-head p { margin: 4px 0 0; color: var(--muted); font-size: 0.86rem; }
+
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .btn {
+      appearance: none; border: 1px solid var(--line); background: #182338; color: var(--navy);
+      padding: 10px 16px; border-radius: 999px; font-weight: 700; font-size: 0.9rem;
+      cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+      transition: transform .05s, box-shadow .15s, border-color .15s, background .15s;
+    }
+    .btn:hover { border-color: #4f6ef7; background: #1c2940; }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primary {
+      border: 0; color: #fff; background: var(--grad);
+      box-shadow: 0 10px 22px rgba(79,110,247,.35);
+    }
+    .btn-primary:hover { box-shadow: 0 12px 26px rgba(79,110,247,.45); }
+    .btn-danger {
+      background: rgba(239,68,68,.12); border-color: rgba(248,113,113,.35); color: #fca5a5;
+    }
+    .btn-ghost { background: transparent; color: var(--muted); border-color: transparent; }
+    .btn-ghost:hover { background: rgba(148,163,184,.08); color: var(--navy); border-color: var(--line); }
+    .btn-logout {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%;
+      color: #f87171;
+      border-color: rgba(248, 113, 113, .25);
+      background: rgba(248, 113, 113, .08);
+    }
+    .btn-logout svg { width: 16px; height: 16px; flex-shrink: 0; }
+    #btnSteam .steam-short { display: none; }
+    .btn-logout .logout-short { display: none; }
+    .btn-logout:hover {
+      color: #fecaca;
+      background: rgba(248, 113, 113, .16);
+      border-color: rgba(248, 113, 113, .45);
+    }
+
+    .console-card { display: flex; flex-direction: column; min-height: 520px; }
+    #console {
+      flex: 1; min-height: 420px; max-height: 58vh; overflow: auto;
+      background: #070b14; color: #dbe7ff;
+      border-radius: 14px; padding: 14px 16px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12.5px; line-height: 1.5;
+      white-space: pre-wrap; word-break: break-word;
+      box-shadow: inset 0 0 0 1px rgba(148,163,184,.12);
+    }
+    .log-info { color: #93c5fd; }
+    .log-cmd { color: #fcd34d; }
+    .log-rcon { color: #6ee7b7; }
+    .log-error { color: #fca5a5; }
+    .log-warn { color: #fbbf24; }
+    .log-ok { color: #34d399; }
+    .log-steam { color: #7dd3fc; }
+    .log-network { color: #c4b5fd; }
+    .log-map { color: #67e8f9; }
+    .log-player { color: #f9a8d4; }
+    .log-time { color: #64748b; }
+    .log-line { color: #94a3b8; }
+    .log-dim { color: #64748b; }
+
+    .cmdbar { display: flex; gap: 8px; margin-top: 12px; }
+    .field { display: grid; gap: 6px; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { font-size: 0.78rem; font-weight: 700; color: var(--muted); letter-spacing: 0.02em; display: inline-flex; align-items: center; gap: 6px; }
+    .tip {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      font-size: 0.65rem;
+      font-weight: 800;
+      line-height: 1;
+      cursor: help;
+      flex-shrink: 0;
+    }
+    .tip.open {
+      background: #312e81;
+      border-color: #6366f1;
+      color: #c7d2fe;
+    }
+    .tip-box {
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 8px);
+      transform: translateX(-50%);
+      width: max-content;
+      max-width: min(280px, 70vw);
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0;
+      line-height: 1.4;
+      box-shadow: 0 8px 24px rgba(0,0,0,.35);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity .12s, visibility .12s;
+      z-index: 40;
+      white-space: normal;
+      text-align: left;
+      user-select: text;
+      cursor: text;
+    }
+    .tip-box::after {
+      content: "";
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: #334155;
+    }
+    .tip:hover .tip-box {
+      opacity: 1;
+      visibility: visible;
+    }
+    .tip.open .tip-box {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+    .field input, .field textarea, .field select,
+    .cmdbar input, #login input {
+      width: 100%;
+      background: var(--input);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      color: var(--navy);
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .field textarea { min-height: 80px; resize: vertical; }
+    .field input:focus, .field textarea:focus, .field select:focus,
+    .cmdbar input:focus, #login input:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 4px rgba(79,110,247,.2);
+    }
+
+    .cfg-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 760px) { .cfg-grid { grid-template-columns: 1fr; } }
+
+    .toast { font-size: 0.88rem; color: var(--ok); min-height: 1.2em; font-weight: 600; }
+    .toast.err { color: var(--bad); }
+    .cfg-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+
+    .footer-note {
+      color: var(--muted); font-size: 0.8rem;
+      display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+      padding: 0 4px 8px;
+    }
+
+    .tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 10px; border-radius: 999px;
+      background: rgba(148,163,184,.08); border: 1px solid var(--line);
+      font-size: 0.78rem; font-weight: 600; color: var(--muted);
+    }
+
+    .players-empty {
+      padding: 28px 12px; text-align: center; color: var(--muted); font-size: 0.95rem;
+    }
+    .players-list { display: grid; gap: 10px; }
+    .player-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--input);
+    }
+    @media (max-width: 760px) {
+      .player-row { grid-template-columns: 1fr; }
+    }
+    .player-main { min-width: 0; }
+    .player-nick {
+      font-weight: 700; color: var(--navy); font-size: 1rem;
+      margin-bottom: 4px; word-break: break-word;
+    }
+    .player-meta {
+      display: flex; flex-wrap: wrap; gap: 8px 12px;
+      color: var(--muted); font-size: 0.8rem;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    .player-meta .pill {
+      display: inline-flex; align-items: center;
+      padding: 2px 8px; border-radius: 999px;
+      border: 1px solid var(--line); background: rgba(148,163,184,.06);
+    }
+    .player-meta .pill.rank {
+      color: #a5b4fc; border-color: rgba(99,102,241,.35);
+      background: rgba(79,110,247,.12);
+    }
+    .player-actions {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end;
+    }
+    .player-actions select {
+      background: var(--card); border: 1px solid var(--line); color: var(--navy);
+      border-radius: 10px; padding: 9px 12px; min-width: 140px;
+    }
+    .player-actions select:focus {
+      outline: none; border-color: #6366f1;
+      box-shadow: 0 0 0 4px rgba(79,110,247,.2);
+    }
+
+    .files-crumbs {
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+      margin-bottom: 12px; font-size: 0.85rem;
+    }
+    .files-crumbs button {
+      border: 1px solid var(--line); background: var(--input); color: var(--accent);
+      border-radius: 999px; padding: 5px 10px; cursor: pointer; font-weight: 600;
+    }
+    .files-crumbs button:hover { border-color: #4f6ef7; }
+    .files-crumbs .sep { color: var(--muted); }
+    .files-upload-hint {
+      color: var(--muted); font-size: 0.8rem; margin: -4px 0 12px;
+    }
+    .files-layout {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 12px;
+      min-height: 420px;
+    }
+    @media (max-width: 960px) {
+      .files-layout { grid-template-columns: 1fr; }
+    }
+    .files-list {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--input);
+      overflow: auto;
+      max-height: 58vh;
+    }
+    .file-row {
+      display: grid;
+      grid-template-columns: 28px 1fr auto auto;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(42,52,63,.9);
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .file-actions {
+      display: flex; gap: 6px; align-items: center; justify-content: flex-end;
+    }
+    .file-extract {
+      border: 1px solid #2f6a55; background: #143228; color: #b8f0d2;
+      border-radius: 999px; padding: 5px 10px; font-size: 0.75rem; font-weight: 700;
+      cursor: pointer;
+    }
+    .file-extract:hover { background: #1a4032; }
+    .file-delete {
+      border: 1px solid #6a2f3a; background: #32141a; color: #f0b8c0;
+      border-radius: 999px; padding: 5px 10px; font-size: 0.75rem; font-weight: 700;
+      cursor: pointer;
+    }
+    .file-delete:hover { background: #401a22; }
+    .file-row:hover { background: rgba(79,110,247,.08); }
+    .file-row.active { background: rgba(79,110,247,.14); }
+    .file-ico { color: var(--accent); font-weight: 700; }
+    .file-ico.file { color: var(--muted); }
+    .file-name { color: var(--navy); word-break: break-all; font-weight: 600; }
+    .file-size { color: var(--muted); font-size: 0.75rem; font-family: ui-monospace, monospace; }
+    .files-preview {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--input);
+      display: flex; flex-direction: column;
+      min-height: 420px;
+      max-height: 58vh;
+      overflow: hidden;
+    }
+    .files-preview-head {
+      display: flex; justify-content: space-between; gap: 8px; align-items: center;
+      padding: 12px 14px; border-bottom: 1px solid var(--line);
+    }
+    .files-pre {
+      margin: 0; padding: 14px;
+      flex: 1; overflow: auto;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px; line-height: 1.45;
+      white-space: pre-wrap; word-break: break-word;
+      color: #cbd5e1;
+      background: #070b14;
+      border: 0;
+      width: 100%;
+      resize: none;
+      outline: none;
+    }
+
+    /* —— Mobile —— */
+    @media (max-width: 920px) {
+      .topbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        padding: 12px 14px;
+      }
+      .topbar-left, .topbar-right {
+        width: 100%;
+        justify-content: space-between;
+      }
+      .topbar-right { gap: 8px; }
+      .connect-chip {
+        flex: 1;
+        min-width: 0;
+        justify-content: space-between;
+        font-size: 0.78rem;
+        padding: 8px 12px;
+      }
+      .connect-chip #connectText {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .status-badge { flex-shrink: 0; }
+
+      .shell {
+        grid-template-columns: 1fr;
+        padding: 10px;
+        gap: 8px;
+        flex: 0 0 auto;
+        align-content: start;
+      }
+
+      .main {
+        gap: 8px;
+        align-content: start;
+      }
+
+      .sidebar {
+        position: static;
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+      }
+      .nav-scroll {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 2px;
+      }
+      .nav-scroll::-webkit-scrollbar { display: none; }
+      .nav-btn {
+        width: auto;
+        flex: 0 0 auto;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(148,163,184,.06);
+      }
+      .nav-btn.active {
+        background: linear-gradient(135deg, rgba(79,110,247,.28), rgba(155,143,240,.2));
+      }
+      .nav-label { display: none; }
+      .side-foot {
+        margin-top: 0;
+        padding-top: 0;
+        border-top: 0;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .side-foot .btn {
+        width: 100%;
+        justify-content: center;
+        padding: 10px 8px;
+        font-size: 0.82rem;
+        white-space: nowrap;
+      }
+      #btnSteam .steam-full { display: none; }
+      #btnSteam .steam-short { display: inline; }
+      .btn-logout .logout-full { display: none; }
+      .btn-logout .logout-short { display: inline; }
+      .btn-logout { width: 100%; }
+
+      .hero-stats {
+        grid-template-columns: 1fr;
+        gap: 8px;
+        margin-bottom: 0;
+      }
+      .stat {
+        padding: 10px 12px;
+        gap: 10px;
+        min-width: 0;
+        align-items: center;
+      }
+      .stat > div:last-child { min-width: 0; flex: 1; }
+      .stat .k { font-size: 0.7rem; }
+      .stat .v {
+        font-size: 0.82rem;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        hyphens: auto;
+      }
+      .stat-ico { width: 36px; height: 36px; border-radius: 10px; }
+      .stat-ico svg { width: 20px; height: 20px; }
+
+      .card { padding: 14px; }
+      .card-head {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .card-head .actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+      .card-head .actions .btn { width: 100%; justify-content: center; }
+
+      .cmdbar { flex-direction: column; }
+      .cmdbar .btn { width: 100%; justify-content: center; }
+
+      .console-card { min-height: 360px; }
+      #console { min-height: 260px; max-height: 48vh; font-size: 11.5px; }
+
+      .files-layout { grid-template-columns: 1fr; min-height: 0; }
+      .files-list, .files-preview {
+        max-height: 42vh;
+        min-height: 220px;
+      }
+      .file-row {
+        grid-template-columns: 24px 1fr auto;
+        gap: 6px;
+        padding: 10px;
+        font-size: 0.84rem;
+      }
+      .file-actions { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; }
+      .files-crumbs { flex-wrap: wrap; }
+
+      .player-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .side-foot { grid-template-columns: 1fr; }
+      .brand span, .topbar .brand { font-size: 0.95rem; }
+    }
+  </style>
+</head>
+<body>
+  <!-- LOGIN -->
+  <section id="login" class="hidden">
+    <div class="login-card">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M7 16a4 4 0 0 1 .4-7.97A5.5 5.5 0 0 1 18 10.5 3.5 3.5 0 0 1 18.5 17H7Z" stroke="currentColor" stroke-width="1.8"/><path d="m12 9 1.2 2.4L16 12l-2.8.6L12 15l-1.2-2.4L8 12l2.8-.6L12 9Z" fill="currentColor"/></svg>
+        </div>
+        X
+      </div>
+      <h1>Panel <span>GMod</span></h1>
+      <p>Connecte-toi pour gérer ton serveur dédié.</p>
+      <form id="loginForm">
+        <div class="field">
+          <label>Identifiant</label>
+          <input type="text" id="username" value="admin" placeholder="admin" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label>Mot de passe</label>
+          <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" required />
+        </div>
+        <button class="btn btn-primary" type="submit" style="width:100%; justify-content:center">Entrer →</button>
+        <div class="err" id="loginErr"></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- APP -->
+  <section id="app" class="hidden" data-tab="console">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M7 16a4 4 0 0 1 .4-7.97A5.5 5.5 0 0 1 18 10.5 3.5 3.5 0 0 1 18.5 17H7Z" stroke="currentColor" stroke-width="1.8"/><path d="m12 9 1.2 2.4L16 12l-2.8.6L12 15l-1.2-2.4L8 12l2.8-.6L12 9Z" fill="currentColor"/></svg>
+          </div>
+          X <span style="font-weight:600;color:var(--muted);font-size:.9rem">/ GMod</span>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="players-chip" id="playersChip" title="Joueurs en ligne">
+          <span class="dot" aria-hidden="true"></span>
+          <span id="playersChipCount">0 joueurs</span>
+        </div>
+        <button type="button" class="connect-chip" id="connectPill" title="Copier">
+          <small>CONNECT</small>
+          <span id="connectText">…</span>
+        </button>
+        <div class="status-badge" id="statusBadge"><span class="dot"></span><span id="stateLabel">…</span></div>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="nav-scroll">
+          <button type="button" class="nav-btn active" data-tab="console">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16v14H4V5Z" stroke="currentColor" stroke-width="1.7"/><path d="m7 9 3 3-3 3M12 15h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="nav-label">Console</span>
+          </button>
+          <button type="button" class="nav-btn" data-tab="config">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.2-2-3.4-2.3.7a8 8 0 0 0-1.7-1L13 3h-2l-.5 3.1a8 8 0 0 0-1.7 1L6.5 6.4l-2 3.4 2 1.2a7.8 7.8 0 0 0 0 2l-2 1.2 2 3.4 2.3-.7a8 8 0 0 0 1.7 1L11 21h2l.5-3.1a8 8 0 0 0 1.7-1l2.3.7 2-3.4-2-1.2Z" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span class="nav-label">Configuration</span>
+          </button>
+          <button type="button" class="nav-btn" data-tab="players">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="9.5" cy="8" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M19 19v-1a3.5 3.5 0 0 0-2.5-3.35M16 4.7a3 3 0 0 1 0 5.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <span class="nav-label">Joueurs</span>
+          </button>
+          <button type="button" class="nav-btn" data-tab="files">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" stroke="currentColor" stroke-width="1.7"/></svg>
+            <span class="nav-label">Fichiers</span>
+          </button>
+          <button type="button" class="nav-btn" data-tab="backups">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16v12H4V7Zm4-3h8M12 11v5M9.5 14.5 12 17l2.5-2.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="nav-label">Backups</span>
+          </button>
+          <button type="button" class="nav-btn" data-tab="system">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 19h16M6 16V9m4 7V5m4 11v-6m4 6V8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <span class="nav-label">Système</span>
+          </button>
+          <button type="button" class="nav-btn" data-tab="password">
+            <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.7"/></svg>
+            <span class="nav-label">Mot de passe</span>
+          </button>
+          <button type="button" class="nav-btn" data-tab="admin" id="navAdmin" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 7v5c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V7l-8-4Z" stroke="currentColor" stroke-width="1.7"/><path d="M9.5 12.5 11 14l3.5-3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="nav-label">Admin</span>
+          </button>
+        </div>
+        <div class="side-foot">
+          <a class="btn" id="btnSteam" href="#" target="_blank" rel="noopener"><span class="steam-full">Steam connect</span><span class="steam-short">Steam</span></a>
+          <button class="btn btn-ghost btn-logout" id="btnLogout" type="button">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M14 16l4-4-4-4M10 12h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="logout-full">Déconnexion</span>
+            <span class="logout-short">Déco</span>
+          </button>
+        </div>
+      </aside>
+
+      <div class="main">
+        <!-- CONSOLE -->
+        <div id="tab-console">
+          <div class="hero-stats">
+            <div class="stat">
+              <div class="stat-ico"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 7v5c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V7l-8-4Z" stroke="currentColor" stroke-width="1.7"/></svg></div>
+              <div><div class="k">État</div><div class="v" id="mState">—</div></div>
+            </div>
+            <div class="stat">
+              <div class="stat-ico"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              <div><div class="k">IP connexion</div><div class="v" id="mConnect">—</div></div>
+            </div>
+            <div class="stat">
+              <div class="stat-ico"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16v12H4V7Zm4-3h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+              <div><div class="k">Nom</div><div class="v" id="mHost">—</div></div>
+            </div>
+            <div class="stat">
+              <div class="stat-ico"><svg viewBox="0 0 24 24" fill="none"><path d="M3 11.5 12 4l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10.5V20h12V10.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 20v-6h4v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              <div><div class="k">Carte</div><div class="v" id="mMap">—</div></div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:12px">
+            <div class="card-head">
+              <div>
+                <h2>Contrôle serveur</h2>
+                <p>Start, stop, restart — comme sur ton espace client.</p>
+              </div>
+              <div class="actions">
+                <button class="btn btn-primary" id="btnStart" type="button">Start →</button>
+                <button class="btn btn-danger" id="btnStop" type="button">Stop</button>
+                <button class="btn" id="btnRestart" type="button">Restart</button>
+                <button class="btn btn-danger" id="btnKill" type="button" title="Kill forcé (Pelican)">Kill</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card console-card" style="margin-top:12px">
+            <div class="card-head">
+              <div>
+                <h2>Console live</h2>
+                <p>Logs systemd + commandes RCON</p>
+              </div>
+              <span class="tag" id="wsState">WS …</span>
+            </div>
+            <div id="console" aria-live="polite"></div>
+            <form class="cmdbar" id="cmdForm">
+              <input id="cmdInput" type="text" placeholder="status · changelevel gm_flatgrass · say hello" autocomplete="off" spellcheck="false" />
+              <button class="btn btn-primary" type="submit">Envoyer</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- CONFIG -->
+        <div id="tab-config" class="hidden">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Configuration serveur</h2>
+                <p>Variables type Pterodactyl — Workshop, clé API, carte…</p>
+              </div>
+            </div>
+            <form id="cfgForm" class="cfg-grid">
+              <div class="field">
+                <label>Nom du serveur</label>
+                <input name="hostname" />
+              </div>
+              <div class="field">
+                <label>Port</label>
+                <input name="port" type="number" min="1" max="65535" />
+              </div>
+              <div class="field">
+                <label>Mode de jeu</label>
+                <input name="gamemode" placeholder="sandbox / darkrp / terrortown…" />
+              </div>
+              <div class="field">
+                <label>Carte</label>
+                <input name="map" placeholder="gm_construct" />
+              </div>
+              <div class="field">
+                <label>Joueurs max</label>
+                <input name="maxplayers" type="number" min="1" max="128" />
+              </div>
+              <div class="field">
+                <label>Tickrate</label>
+                <input name="tickrate" type="number" min="22" max="128" />
+              </div>
+              <div class="field full">
+                <label>ID collection Workshop <span class="tip" tabindex="0">?<span class="tip-box">ID de ta collection Steam Workshop. Sur steamcommunity.com → ta collection → le nombre dans l’URL.</span></span></label>
+                <input name="workshop_collection" placeholder="Ex: 123456789" />
+              </div>
+              <div class="field">
+                <label>ID carte Workshop (démarrage) <span class="tip" tabindex="0">?<span class="tip-box">Si ta map est sur le Workshop (pas en local), mets l’ID de l’item. Sinon laisse vide.</span></span></label>
+                <input name="workshop_start_map" placeholder="Optionnel" />
+              </div>
+              <div class="field">
+                <label>Clé API Steam Web <span class="tip" tabindex="0">?<span class="tip-box">Obligatoire pour le Workshop. Crée-la sur steamcommunity.com/dev/apikey.</span></span></label>
+                <input name="steam_api_key" placeholder="steamcommunity.com/dev/apikey" />
+              </div>
+              <div class="field">
+                <label>GSLT (jeton compte Steam) <span class="tip" tabindex="0">?<span class="tip-box">Pour apparaître dans la liste Steam. managegameservers → AppID 4020 → crée un token.</span></span></label>
+                <input name="gslt" placeholder="32 caractères — managegameservers AppID 4020" />
+              </div>
+              <div class="field">
+                <label>Rafraîchissement Lua <span class="tip" tabindex="0">?<span class="tip-box">Recharge auto les .lua modifiés sans restart. Utile en dév, désactive en prod.</span></span></label>
+                <select name="lua_refresh">
+                  <option value="0">0 — désactivé (-disableluarefresh)</option>
+                  <option value="1">1 — activé</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Mot de passe serveur</label>
+                <input name="server_password" placeholder="Vide = public" />
+              </div>
+              <div class="field">
+                <label>Mot de passe RCON <span class="tip" tabindex="0">?<span class="tip-box">Mot de passe admin distant (console RCON). Ne le partage pas.</span></span></label>
+                <input name="rcon_password" />
+              </div>
+              <div class="field">
+                <label>Région (sv_region) <span class="tip" tabindex="0">?<span class="tip-box">Zone dans le navigateur de serveurs Steam. Pour un serveur FR → Europe.</span></span></label>
+                <select name="sv_region">
+                  <option value="0">0 — US Est</option>
+                  <option value="1">1 — US Ouest</option>
+                  <option value="2">2 — Amérique du Sud</option>
+                  <option value="3">3 — Europe</option>
+                  <option value="4">4 — Asie</option>
+                  <option value="5">5 — Australie</option>
+                  <option value="6">6 — Moyen-Orient</option>
+                  <option value="7">7 — Afrique</option>
+                  <option value="255">255 — Monde entier</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Mode réseau (sv_lan) <span class="tip" tabindex="0">?<span class="tip-box">Internet = visible en ligne. LAN = uniquement réseau local.</span></span></label>
+                <select name="sv_lan">
+                  <option value="0">0 — Internet</option>
+                  <option value="1">1 — LAN</option>
+                </select>
+              </div>
+              <div class="field full">
+                <label>URL de chargement <span class="tip" tabindex="0">?<span class="tip-box">Page web (https) affichée pendant le load. Héberge un HTML, colle l’URL ici, enregistre + redémarre. Vide = écran GMod par défaut.</span></span></label>
+                <input name="sv_loadingurl" placeholder="https://monsite.com/loading.html" />
+              </div>
+              <div class="field full">
+                <label>URL FastDL <span class="tip" tabindex="0">?<span class="tip-box">Miroir HTTP des contenus (maps, matériaux…) pour un download plus rapide. L’URL doit finir par /. Optionnel si tu n’utilises que le Workshop.</span></span></label>
+                <input name="sv_downloadurl" placeholder="https://monsite.com/fastdl/" />
+              </div>
+              <div class="field full">
+                <label>Args supplémentaires <span class="tip" tabindex="0">?<span class="tip-box">Options avancées au lancement (séparées par un espace). Laisse vide si tu ne sais pas.</span></span></label>
+                <textarea name="extra_args" placeholder="+fps_max 0 -norestart"></textarea>
+              </div>
+              <div class="field full" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+                <div class="field" style="flex:1;min-width:180px">
+                  <label>Changer de carte (RCON live) <span class="tip" tabindex="0">?<span class="tip-box">Change la map à chaud sans redémarrer le serveur.</span></span></label>
+                  <input id="changelevelMap" placeholder="rp_glife_rockford3" />
+                </div>
+                <button class="btn" type="button" id="btnChangelevel">Changer de carte →</button>
+              </div>
+              <div class="field full cfg-actions">
+                <button class="btn btn-primary" type="submit" id="btnSaveCfg">Enregistrer</button>
+                <button class="btn btn-primary" type="button" id="btnSaveRestart">Enregistrer + Redémarrer →</button>
+                <span class="toast" id="cfgToast"></span>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- PLAYERS -->
+        <div id="tab-players" class="hidden">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Joueurs en ligne</h2>
+                <p>Liste live + grades IG (user / admin / superadmin)</p>
+              </div>
+              <div class="actions">
+                <button class="btn" type="button" id="btnRefreshPlayers">Rafraîchir</button>
+                <span class="tag" id="playersMeta">0 joueur</span>
+              </div>
+            </div>
+            <div id="playersEmpty" class="players-empty">Aucun joueur connecté.</div>
+            <div id="playersList" class="players-list"></div>
+            <div class="toast" id="playersToast" style="margin-top:12px"></div>
+          </div>
+        </div>
+
+        <!-- FILES -->
+        <div id="tab-files" class="hidden">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Explorateur de fichiers</h2>
+                <p>Lecture dans <code>/home/steam/gmod</code></p>
+              </div>
+              <div class="actions">
+                <label class="btn btn-primary" style="cursor:pointer;margin:0">
+                  + Ajouter
+                  <input type="file" id="filesUploadInput" hidden />
+                </label>
+                <button class="btn" type="button" id="btnFilesMkdir">+ Dossier</button>
+                <button class="btn" type="button" id="btnFilesUp">↑ Parent</button>
+                <button class="btn" type="button" id="btnFilesRefresh">Rafraîchir</button>
+              </div>
+            </div>
+            <div class="files-crumbs" id="filesCrumbs"></div>
+            <div class="files-upload-hint">Upload dans le dossier courant · .rar / .zip / .7z extractibles ensuite</div>
+            <div class="files-layout">
+              <div class="files-list" id="filesList"></div>
+              <div class="files-preview">
+                <div class="files-preview-head">
+                  <strong id="filesPreviewName">Aperçu</strong>
+                  <span class="tag" id="filesPreviewMeta">—</span>
+                </div>
+                <textarea id="filesPreview" class="files-pre" spellcheck="false" placeholder="Sélectionne un fichier texte (.lua, .cfg, .txt…)"></textarea>
+                <div class="actions" style="padding:10px 12px;border-top:1px solid var(--line)">
+                  <button class="btn btn-primary" type="button" id="btnFilesSave" disabled>Enregistrer</button>
+                  <button class="btn" type="button" id="btnFilesDownload" disabled>Télécharger</button>
+                  <button class="btn" type="button" id="btnFilesRename" disabled>Renommer</button>
+                  <button class="btn" type="button" id="btnFilesZip" disabled>Zip</button>
+                </div>
+              </div>
+            </div>
+            <div class="toast" id="filesToast" style="margin-top:12px"></div>
+          </div>
+        </div>
+
+        <!-- BACKUPS -->
+        <div id="tab-backups" class="hidden">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Backups</h2>
+                <p>Sauvegardes addons / cfg / data / lua — style Pelican</p>
+              </div>
+              <div class="actions">
+                <button class="btn btn-primary" type="button" id="btnBackupCreate">Créer un backup →</button>
+                <button class="btn" type="button" id="btnBackupRefresh">Rafraîchir</button>
+              </div>
+            </div>
+            <div id="backupsList" class="players-list"></div>
+            <div class="toast" id="backupsToast" style="margin-top:12px"></div>
+          </div>
+        </div>
+
+        <!-- SYSTEM -->
+        <div id="tab-system" class="hidden">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Ressources</h2>
+                <p>CPU / RAM / Disque (hôte VPS)</p>
+              </div>
+              <div class="actions">
+                <button class="btn" type="button" id="btnResRefresh">Rafraîchir</button>
+              </div>
+            </div>
+            <div class="hero-stats" id="resStats" style="margin-bottom:8px">
+              <div class="stat">
+                <div class="stat-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="7" y="7" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.7"/><path d="M10 4.5v2.5M14 4.5v2.5M10 17v2.5M14 17v2.5M4.5 10h2.5M4.5 14h2.5M17 10h2.5M17 14h2.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><rect x="10" y="10" width="4" height="4" rx="0.5" stroke="currentColor" stroke-width="1.5"/></svg></div>
+                <div><div class="k">Charge CPU</div><div class="v" id="resCpu">—</div></div>
+              </div>
+              <div class="stat">
+                <div class="stat-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="6" y="7" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.7"/><path d="M9 17v2M15 17v2M4.5 10H6M4.5 14H6M18 10h1.5M18 14h1.5M9 10.5h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+                <div><div class="k">Mémoire</div><div class="v" id="resMem">—</div></div>
+              </div>
+              <div class="stat">
+                <div class="stat-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="7" rx="6.5" ry="2.2" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 7v6.5c0 1.2 2.9 2.2 6.5 2.2s6.5-1 6.5-2.2V7" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 11c0 1.2 2.9 2.2 6.5 2.2s6.5-1 6.5-2.2" stroke="currentColor" stroke-width="1.7"/></svg></div>
+                <div><div class="k">Disque</div><div class="v" id="resDisk">—</div></div>
+              </div>
+            </div>
+            <p style="color:var(--muted);font-size:.86rem;margin:0 0 14px">GMod RSS: <strong id="resGmod" style="color:var(--navy)">—</strong></p>
+          </div>
+          <div class="card" style="margin-top:12px">
+            <div class="card-head">
+              <div>
+                <h2>Mise à jour SteamCMD</h2>
+                <p>App 4020 · beta x86-64 (stop auto du serveur)</p>
+              </div>
+              <div class="actions">
+                <button class="btn btn-primary" type="button" id="btnSteamUpdate">Update + validate →</button>
+              </div>
+            </div>
+            <div class="toast" id="systemToast"></div>
+          </div>
+          <div class="card" style="margin-top:12px">
+            <div class="card-head">
+              <div>
+                <h2>Activité panel</h2>
+                <p>Journal des actions (start, backup, fichiers…)</p>
+              </div>
+              <button class="btn" type="button" id="btnActivityRefresh">Rafraîchir</button>
+            </div>
+            <div id="activityList" class="players-list"></div>
+          </div>
+        </div>
+
+        <!-- PASSWORD -->
+        <div id="tab-password" class="hidden">
+          <div class="card" style="max-width:560px">
+            <div class="card-head">
+              <div>
+                <h2>Mot de passe du panel</h2>
+                <p>Change le mot de passe de ton compte (<span id="pwdUserLabel">—</span>).</p>
+              </div>
+            </div>
+            <form id="pwdForm" class="cfg-grid" style="grid-template-columns:1fr">
+              <div class="field">
+                <label>Mot de passe actuel</label>
+                <input name="current" type="password" autocomplete="current-password" required />
+              </div>
+              <div class="field">
+                <label>Nouveau mot de passe</label>
+                <input name="new_password" type="password" autocomplete="new-password" minlength="6" required />
+              </div>
+              <div class="field">
+                <label>Confirmer</label>
+                <input name="confirm" type="password" autocomplete="new-password" minlength="6" required />
+              </div>
+              <div class="field cfg-actions">
+                <button class="btn btn-primary" type="submit">Changer le mot de passe →</button>
+                <span class="toast" id="pwdToast"></span>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- ADMIN -->
+        <div id="tab-admin" class="hidden">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Comptes panel</h2>
+                <p>Gère qui peut se connecter (admin = tout · user = panel serveur).</p>
+              </div>
+              <button class="btn" type="button" id="btnUsersRefresh">Rafraîchir</button>
+            </div>
+            <form id="adminUserForm" class="cfg-grid" style="margin-bottom:16px">
+              <div class="field">
+                <label>Identifiant</label>
+                <input name="username" placeholder="ex: modo" pattern="[A-Za-z0-9_-]{3,32}" required />
+              </div>
+              <div class="field">
+                <label>Mot de passe</label>
+                <input name="password" type="password" minlength="6" required />
+              </div>
+              <div class="field">
+                <label>Rôle</label>
+                <select name="role">
+                  <option value="user">user — accès panel</option>
+                  <option value="admin">admin — + gestion comptes</option>
+                </select>
+              </div>
+              <div class="field" style="display:flex;align-items:end">
+                <button class="btn btn-primary" type="submit">Créer le compte →</button>
+              </div>
+              <div class="field full"><span class="toast" id="adminToast"></span></div>
+            </form>
+            <div id="adminUsersList" class="players-list"></div>
+          </div>
+        </div>
+
+        <div class="footer-note">
+          <span>Panel X · Port jeu dynamique</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const loginView = $("login");
+    const appView = $("app");
+    const consoleEl = $("console");
+    let currentUser = { username: "", role: "" };
+    let ws = null;
+    let statusTimer = null;
+    let playersTimer = null;
+    let connectStr = "";
+    let knownRanks = [
+      { id: "user", label: "Joueur" },
+      { id: "admin", label: "Admin" },
+      { id: "superadmin", label: "SuperAdmin" },
+    ];
+    let filesPath = "";
+    let filesParent = "";
+    let filesSelected = "";
+    let filesEditable = false;
+
+    function classifyLog(text, preferred) {
+      if (preferred && preferred !== "log-line") return preferred;
+      const t = String(text || "");
+      const low = t.toLowerCase();
+
+      // bruits dédiés (shaders) → gris
+      if (/failed to load.*shader|\.so:\s*\(null\)|stdshader_|game_shader_/i.test(t))
+        return "log-dim";
+      if (/failed|error|exception|fatal|panic|refused|invalid|could not|can't|cannot|denied/i.test(t))
+        return "log-error";
+      if (/warning|warn\b|deprecated|unknown command/i.test(t))
+        return "log-warn";
+      if (/success|fully installed|vac secure|secure mode|connected|started|listening|mounted \d+/i.test(t))
+        return "log-ok";
+      if (/steam|workshop|authkey|gslt|steamapi|steamid|s_api|steaminternal/i.test(t))
+        return "log-steam";
+      if (/network:|udp|tcp|\bport\b|0\.0\.0\.0|rcon from/i.test(t))
+        return "log-network";
+      if (/\bmap\b|changelevel|gm_|level changed|map cycle/i.test(t))
+        return "log-map";
+      if (/player|client|joined|left the|disconnected|humans|bots/i.test(t))
+        return "log-player";
+      if (/^> |^\] /.test(t) || low.startsWith("executing") || low.includes("server config"))
+        return "log-info";
+      if (/^#/.test(t.trim()))
+        return "log-dim";
+      return "log-line";
+    }
+
+    function appendLog(text, cls = "log-line") {
+      const line = document.createElement("div");
+      line.className = classifyLog(text, cls);
+      line.textContent = text;
+      consoleEl.appendChild(line);
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+      while (consoleEl.childNodes.length > 800) consoleEl.removeChild(consoleEl.firstChild);
+    }
+
+    function setBusy(busy) {
+      ["btnStart", "btnStop", "btnRestart"].forEach((id) => { $(id).disabled = busy; });
+    }
+
+    function renderStatus(s) {
+      const running = !!s.running;
+      const badge = $("statusBadge");
+      badge.className = "status-badge" + (running ? "" : " off");
+      $("stateLabel").textContent = running ? "EN LIGNE" : "ARRÊTÉ";
+      $("mState").textContent = s.state || "—";
+      $("mHost").textContent = s.hostname || "—";
+      const map = (s.map || "—").split(" at:")[0].trim();
+      const playersRaw = s.players || "";
+      const hm = playersRaw.match(/(\d+)\s*humans?/i);
+      const n = hm ? parseInt(hm[1], 10) : 0;
+      $("mMap").textContent = map;
+      const chip = $("playersChip");
+      const chipCount = $("playersChipCount");
+      if (chipCount) chipCount.textContent = `${n} joueur${n === 1 ? "" : "s"}`;
+      if (chip) chip.classList.toggle("off", !running || n === 0);
+      connectStr = s.connect || "";
+      $("mConnect").textContent = connectStr || "—";
+      $("connectText").textContent = connectStr || "…";
+      if (s.steam_connect) $("btnSteam").href = s.steam_connect;
+      $("btnStart").disabled = running;
+      $("btnStop").disabled = !running;
+    }
+
+    async function api(path, opts = {}) {
+      const res = await fetch(path, opts);
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        showLogin();
+        throw new Error("non authentifié");
+      }
+      return { res, data };
+    }
+
+    async function refreshStatus() {
+      const { data } = await api("/api/status");
+      if (data.ok !== false) renderStatus(data);
+    }
+
+    async function action(path) {
+      setBusy(true);
+      try {
+        const { data } = await api(path, { method: "POST" });
+        appendLog(`> ${path.replace("/api/", "").toUpperCase()}`, "log-cmd");
+        if (data.output) appendLog(data.output, "log-info");
+        if (data.status) renderStatus(data.status);
+        else await refreshStatus();
+      } catch (e) {
+        appendLog(String(e.message || e), "log-error");
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function fillConfig(cfg) {
+      const form = $("cfgForm");
+      for (const [k, v] of Object.entries(cfg || {})) {
+        const el = form.elements.namedItem(k);
+        if (!el) continue;
+        el.value = v == null ? "" : String(v);
+      }
+    }
+
+    async function loadConfig() {
+      const { data } = await api("/api/config");
+      if (data.config) fillConfig(data.config);
+      if (data.connect) {
+        connectStr = data.connect;
+        $("mConnect").textContent = connectStr;
+        $("connectText").textContent = connectStr;
+      }
+      if (data.steam_connect) $("btnSteam").href = data.steam_connect;
+    }
+
+    function readConfigForm() {
+      const form = $("cfgForm");
+      const cfg = {};
+      [...form.elements].forEach((el) => {
+        if (!el.name) return;
+        cfg[el.name] = el.value;
+      });
+      cfg.port = Number(cfg.port || 27015);
+      cfg.maxplayers = Number(cfg.maxplayers || 16);
+      cfg.tickrate = Number(cfg.tickrate || 66);
+      cfg.sv_region = Number(cfg.sv_region || 3);
+      cfg.sv_lan = Number(cfg.sv_lan || 0);
+      cfg.lua_refresh = Number(cfg.lua_refresh || 0);
+      return cfg;
+    }
+
+    async function saveConfig(restart) {
+      const toast = $("cfgToast");
+      toast.className = "toast";
+      toast.textContent = "Enregistrement…";
+      $("btnSaveCfg").disabled = true;
+      $("btnSaveRestart").disabled = true;
+      try {
+        const { res, data } = await api("/api/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ config: readConfigForm(), restart }),
+        });
+        if (!res.ok || !data.ok) {
+          toast.className = "toast err";
+          toast.textContent = data.error || data.message || "Erreur";
+          return;
+        }
+        if (data.config) fillConfig(data.config);
+        if (data.status) renderStatus(data.status);
+        toast.textContent = data.message || "OK";
+        appendLog(`> CONFIG ${restart ? "+ RESTART" : "SAVED"}`, "log-cmd");
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      } finally {
+        $("btnSaveCfg").disabled = false;
+        $("btnSaveRestart").disabled = false;
+      }
+    }
+
+    function connectWs() {
+      if (ws) try { ws.close(); } catch (_) {}
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}/ws/console`);
+      $("wsState").textContent = "WS …";
+      ws.onopen = () => { $("wsState").textContent = "WS connecté"; };
+      ws.onclose = () => {
+        $("wsState").textContent = "WS coupé";
+        setTimeout(() => {
+          if (!appView.classList.contains("hidden")) connectWs();
+        }, 2500);
+      };
+      ws.onerror = () => { $("wsState").textContent = "WS erreur"; };
+      ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { return; }
+        const map = { log: "log-line", info: "log-info", cmd: "log-cmd", rcon: "log-rcon", error: "log-error" };
+        if (msg.type === "pong") return;
+        appendLog(msg.data || "", map[msg.type] || "log-line");
+      };
+    }
+
+    async function refreshPlayers() {
+      const { data } = await api("/api/players");
+      if (data.ranks && data.ranks.length) knownRanks = data.ranks;
+      const list = data.players || [];
+      const empty = $("playersEmpty");
+      const wrap = $("playersList");
+      const meta = $("playersMeta");
+      meta.textContent = list.length + " joueur" + (list.length > 1 ? "s" : "");
+      empty.classList.toggle("hidden", list.length > 0);
+      wrap.innerHTML = "";
+      list.forEach((p) => {
+        const row = document.createElement("div");
+        row.className = "player-row";
+        const money = typeof p.money === "number" ? p.money : 0;
+        const opts = knownRanks.map((r) => {
+          const sel = (p.usergroup || "user").toLowerCase() === r.id.toLowerCase() ? " selected" : "";
+          return `<option value="${r.id}"${sel}>${r.label || r.id}</option>`;
+        }).join("");
+        row.innerHTML = `
+          <div class="player-main">
+            <div class="player-nick"></div>
+            <div class="player-meta">
+              <span class="pill rank"></span>
+              <span class="pill"></span>
+              <span class="pill"></span>
+              <span class="pill"></span>
+            </div>
+          </div>
+          <div class="player-actions">
+            <select class="rank-select">${opts}</select>
+            <button class="btn btn-primary btn-setrank" type="button">Appliquer</button>
+            <button class="btn btn-danger btn-kick" type="button">Kick</button>
+          </div>`;
+        row.querySelector(".player-nick").textContent = p.nick || "?";
+        const pills = row.querySelectorAll(".player-meta .pill");
+        pills[0].textContent = p.usergroup || "user";
+        pills[1].textContent = p.team || "—";
+        pills[2].textContent = p.steamid || "—";
+        pills[3].textContent = `${p.ping || 0} ms · $${money}`;
+        row.querySelector(".btn-setrank").onclick = () => setPlayerRank(p, row.querySelector(".rank-select").value);
+        row.querySelector(".btn-kick").onclick = () => kickPlayer(p);
+        wrap.appendChild(row);
+      });
+    }
+
+    async function setPlayerRank(player, rank) {
+      const toast = $("playersToast");
+      toast.className = "toast";
+      toast.textContent = "Application du grade…";
+      try {
+        const { res, data } = await api("/api/players/rank", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            steamid: player.steamid,
+            steamid64: player.steamid64,
+            rank,
+          }),
+        });
+        if (!res.ok || !data.ok) {
+          toast.className = "toast err";
+          toast.textContent = data.error || "Erreur";
+          return;
+        }
+        toast.textContent = data.message || "OK";
+        await refreshPlayers();
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    }
+
+    async function kickPlayer(player) {
+      if (!confirm(`Kick ${player.nick || player.steamid} ?`)) return;
+      const toast = $("playersToast");
+      toast.className = "toast";
+      toast.textContent = "Kick…";
+      try {
+        const { res, data } = await api("/api/players/kick", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            steamid: player.steamid,
+            steamid64: player.steamid64,
+            reason: "Kick panel X",
+          }),
+        });
+        if (!res.ok || !data.ok) {
+          toast.className = "toast err";
+          toast.textContent = data.error || "Erreur";
+          return;
+        }
+        toast.textContent = "Joueur kick";
+        await refreshPlayers();
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    }
+
+    function showLogin() {
+      appView.classList.add("hidden");
+      loginView.classList.remove("hidden");
+      if (statusTimer) clearInterval(statusTimer);
+      if (playersTimer) clearInterval(playersTimer);
+      if (ws) try { ws.close(); } catch (_) {}
+    }
+
+    function applyRoleUI() {
+      const isAdmin = currentUser.role === "admin";
+      const nav = $("navAdmin");
+      if (nav) nav.style.display = isAdmin ? "" : "none";
+      const label = $("pwdUserLabel");
+      if (label) label.textContent = currentUser.username || "—";
+    }
+
+    function showApp() {
+      loginView.classList.add("hidden");
+      appView.classList.remove("hidden");
+      applyRoleUI();
+      refreshStatus().catch(() => {});
+      loadConfig().catch(() => {});
+      connectWs();
+      statusTimer = setInterval(() => refreshStatus().catch(() => {}), 5000);
+      playersTimer = setInterval(() => {
+        if (!$("tab-players").classList.contains("hidden")) {
+          refreshPlayers().catch(() => {});
+        }
+      }, 4000);
+      const saved = localStorage.getItem("x_panel_tab") || "console";
+      const allowed = ["console", "config", "players", "files", "backups", "system", "password"];
+      if (currentUser.role === "admin") allowed.push("admin");
+      switchTab(allowed.includes(saved) ? saved : "console");
+    }
+
+    function switchTab(tab) {
+      if (tab === "admin" && currentUser.role !== "admin") tab = "console";
+      const app = $("app");
+      if (app) app.dataset.tab = tab;
+      try { localStorage.setItem("x_panel_tab", tab); } catch (_) {}
+      document.querySelectorAll(".nav-btn").forEach((b) => {
+        b.classList.toggle("active", b.dataset.tab === tab);
+      });
+      $("tab-console").classList.toggle("hidden", tab !== "console");
+      $("tab-config").classList.toggle("hidden", tab !== "config");
+      $("tab-players").classList.toggle("hidden", tab !== "players");
+      $("tab-files").classList.toggle("hidden", tab !== "files");
+      $("tab-backups").classList.toggle("hidden", tab !== "backups");
+      $("tab-system").classList.toggle("hidden", tab !== "system");
+      $("tab-password").classList.toggle("hidden", tab !== "password");
+      $("tab-admin").classList.toggle("hidden", tab !== "admin");
+      if (tab === "players") refreshPlayers().catch(() => {});
+      if (tab === "files") loadFiles(filesPath).catch(() => {});
+      if (tab === "backups") refreshBackups().catch(() => {});
+      if (tab === "system") { refreshResources().catch(() => {}); refreshActivity().catch(() => {}); }
+      if (tab === "admin") refreshAdminUsers().catch(() => {});
+    }
+
+    document.querySelectorAll(".nav-btn").forEach((btn) => {
+      btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+    });
+
+    document.querySelectorAll(".tip").forEach((tip) => {
+      tip.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const open = tip.classList.contains("open");
+        document.querySelectorAll(".tip.open").forEach((t) => t.classList.remove("open"));
+        if (!open) tip.classList.add("open");
+      });
+      tip.querySelector(".tip-box")?.addEventListener("click", (e) => e.stopPropagation());
+    });
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".tip")) {
+        document.querySelectorAll(".tip.open").forEach((t) => t.classList.remove("open"));
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        document.querySelectorAll(".tip.open").forEach((t) => t.classList.remove("open"));
+      }
+    });
+
+    $("connectPill").addEventListener("click", async () => {
+      if (!connectStr) return;
+      const text = `connect ${connectStr}`;
+      try {
+        await navigator.clipboard.writeText(text);
+        const el = $("connectText");
+        const old = el.textContent;
+        el.textContent = "copié !";
+        setTimeout(() => { el.textContent = old; }, 1200);
+      } catch (_) {}
+    });
+
+    $("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("loginErr").textContent = "";
+      const fd = new FormData();
+      fd.set("username", $("username").value.trim() || "admin");
+      fd.set("password", $("password").value);
+      const res = await fetch("/api/login", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        $("loginErr").textContent = data.error || "Échec";
+        return;
+      }
+      currentUser = { username: data.username || "admin", role: data.role || "user" };
+      showApp();
+    });
+
+    function fmtSize(n) {
+      n = Number(n) || 0;
+      if (n < 1024) return n + " B";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+      return (n / (1024 * 1024)).toFixed(1) + " MB";
+    }
+
+    async function loadFiles(path = "") {
+      const toast = $("filesToast");
+      toast.className = "toast";
+      toast.textContent = "";
+      try {
+        const { res, data } = await api("/api/files?path=" + encodeURIComponent(path || ""));
+        if (!res.ok || !data.ok) {
+          toast.className = "toast err";
+          toast.textContent = data.error || "Erreur";
+          return;
+        }
+        filesPath = data.path || "";
+        filesParent = data.parent || "";
+        const crumbs = $("filesCrumbs");
+        crumbs.innerHTML = "";
+        (data.crumbs || []).forEach((c, i) => {
+          if (i > 0) {
+            const sep = document.createElement("span");
+            sep.className = "sep";
+            sep.textContent = "/";
+            crumbs.appendChild(sep);
+          }
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = c.name;
+          b.onclick = () => loadFiles(c.path);
+          crumbs.appendChild(b);
+        });
+
+        const list = $("filesList");
+        list.innerHTML = "";
+        if (!data.entries || !data.entries.length) {
+          list.innerHTML = '<div class="file-row"><span></span><span class="file-name" style="color:var(--muted)">Dossier vide</span><span></span></div>';
+        }
+        (data.entries || []).forEach((e) => {
+          const row = document.createElement("div");
+          row.className = "file-row" + (filesSelected === e.path ? " active" : "");
+          const ico = document.createElement("span");
+          ico.className = "file-ico" + (e.type === "file" ? " file" : "");
+          ico.textContent = e.type === "dir" ? "📁" : (e.archive ? "📦" : (e.secret ? "🔒" : "📄"));
+          const name = document.createElement("span");
+          name.className = "file-name";
+          name.textContent = e.name + (e.type === "dir" ? "/" : "");
+          const size = document.createElement("span");
+          size.className = "file-size";
+          size.textContent = e.type === "dir" ? "dir" : fmtSize(e.size);
+          row.appendChild(ico);
+          row.appendChild(name);
+          row.appendChild(size);
+          const actions = document.createElement("div");
+          actions.className = "file-actions";
+          if (e.archive) {
+            const ex = document.createElement("button");
+            ex.type = "button";
+            ex.className = "file-extract";
+            ex.textContent = "Extraire";
+            ex.onclick = (ev) => {
+              ev.stopPropagation();
+              extractArchive(e.path, e.name);
+            };
+            actions.appendChild(ex);
+          }
+          const del = document.createElement("button");
+          del.type = "button";
+          del.className = "file-delete";
+          del.textContent = "Suppr.";
+          del.onclick = (ev) => {
+            ev.stopPropagation();
+            deleteEntry(e.path, e.name, e.type);
+          };
+          actions.appendChild(del);
+          row.appendChild(actions);
+          row.onclick = () => {
+            if (e.type === "dir") loadFiles(e.path);
+            else openFile(e.path, e.name);
+          };
+          list.appendChild(row);
+        });
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    }
+
+    async function openFile(path, name) {
+      filesSelected = path;
+      filesEditable = false;
+      $("filesPreviewName").textContent = name || path;
+      $("filesPreviewMeta").textContent = "chargement…";
+      $("filesPreview").value = "…";
+      $("btnFilesSave").disabled = true;
+      $("btnFilesDownload").disabled = false;
+      $("btnFilesRename").disabled = false;
+      $("btnFilesZip").disabled = false;
+      try {
+        const { res, data } = await api("/api/files/read?path=" + encodeURIComponent(path));
+        if (!res.ok || !data.ok) {
+          $("filesPreview").value = data.error || "Erreur";
+          $("filesPreviewMeta").textContent = "erreur";
+          return;
+        }
+        let meta = fmtSize(data.size);
+        if (data.binary) meta += " · binaire";
+        if (data.secret) meta += " · masqué";
+        if (data.truncated) meta += " · tronqué";
+        $("filesPreviewMeta").textContent = meta;
+        $("filesPreview").value = data.content || "";
+        filesEditable = !(data.binary || data.secret);
+        $("btnFilesSave").disabled = !filesEditable;
+        document.querySelectorAll(".file-row").forEach((r) => r.classList.remove("active"));
+      } catch (e) {
+        $("filesPreview").value = String(e.message || e);
+      }
+    }
+
+    async function extractArchive(path, name) {
+      if (!confirm(`Extraire ${name} ici ?`)) return;
+      const toast = $("filesToast");
+      toast.className = "toast";
+      toast.textContent = "Extraction…";
+      try {
+        const { res, data } = await api("/api/files/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path }),
+        });
+        if (!res.ok || !data.ok) {
+          toast.className = "toast err";
+          toast.textContent = data.error || "Erreur extraction";
+          return;
+        }
+        toast.textContent = data.message || "Extrait";
+        await loadFiles(data.dir || filesPath);
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    }
+
+    async function deleteEntry(path, name, type) {
+      const label = type === "dir" ? `le dossier ${name}/ (et tout son contenu)` : name;
+      if (!confirm(`Supprimer ${label} ?`)) return;
+      const toast = $("filesToast");
+      toast.className = "toast";
+      toast.textContent = "Suppression…";
+      try {
+        const { res, data } = await api("/api/files/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path }),
+        });
+        if (!res.ok || !data.ok) {
+          toast.className = "toast err";
+          toast.textContent = data.error || "Erreur suppression";
+          return;
+        }
+        toast.textContent = data.message || "Supprimé";
+        if (filesSelected === path) {
+          filesSelected = "";
+          filesEditable = false;
+          $("filesPreviewName").textContent = "Aperçu";
+          $("filesPreviewMeta").textContent = "—";
+          $("filesPreview").value = "Sélectionne un fichier texte (.lua, .cfg, .txt…)";
+          $("btnFilesSave").disabled = true;
+          $("btnFilesDownload").disabled = true;
+          $("btnFilesRename").disabled = true;
+          $("btnFilesZip").disabled = true;
+        }
+        await loadFiles(data.dir != null ? data.dir : filesPath);
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    }
+
+    async function uploadSelectedFile(file) {
+      if (!file) return;
+      const toast = $("filesToast");
+      toast.className = "toast";
+      toast.textContent = `Upload ${file.name}…`;
+      const fd = new FormData();
+      fd.set("path", filesPath || "");
+      fd.set("file", file, file.name);
+      try {
+        const res = await fetch("/api/files/upload", { method: "POST", body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          showLogin();
+          throw new Error("non authentifié");
+        }
+        if (!res.ok || !data.ok) {
+          toast.className = "toast err";
+          toast.textContent = data.error || "Upload échoué";
+          return;
+        }
+        toast.textContent = data.message || "Upload OK";
+        await loadFiles(data.dir || filesPath);
+        if (data.archive && confirm(`${data.name} uploadé. Extraire maintenant ?`)) {
+          await extractArchive(data.path, data.name);
+        }
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    }
+
+    $("btnStart").onclick = () => action("/api/start");
+    $("btnStop").onclick = () => action("/api/stop");
+    $("btnRestart").onclick = () => action("/api/restart");
+    $("btnKill").onclick = () => {
+      if (!confirm("Kill forcé du process GMod ?")) return;
+      action("/api/kill");
+    };
+    $("btnRefreshPlayers").onclick = () => refreshPlayers().catch(() => {});
+    $("btnFilesRefresh").onclick = () => loadFiles(filesPath).catch(() => {});
+    $("btnFilesUp").onclick = () => loadFiles(filesParent || "").catch(() => {});
+    $("btnFilesMkdir").onclick = async () => {
+      const name = prompt("Nom du dossier ?");
+      if (!name) return;
+      const toast = $("filesToast");
+      try {
+        const { res, data } = await api("/api/files/mkdir", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: filesPath || "", name }),
+        });
+        toast.className = "toast" + (res.ok && data.ok ? "" : " err");
+        toast.textContent = data.message || data.error || "…";
+        if (res.ok && data.ok) await loadFiles(data.dir || filesPath);
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    };
+    $("btnFilesSave").onclick = async () => {
+      if (!filesSelected || !filesEditable) return;
+      const toast = $("filesToast");
+      toast.className = "toast";
+      toast.textContent = "Enregistrement…";
+      try {
+        const { res, data } = await api("/api/files/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: filesSelected, content: $("filesPreview").value }),
+        });
+        toast.className = "toast" + (res.ok && data.ok ? "" : " err");
+        toast.textContent = data.message || data.error || "…";
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    };
+    $("btnFilesDownload").onclick = () => {
+      if (!filesSelected) return;
+      window.open("/api/files/download?path=" + encodeURIComponent(filesSelected), "_blank");
+    };
+    $("btnFilesRename").onclick = async () => {
+      if (!filesSelected) return;
+      const cur = filesSelected.split("/").pop();
+      const name = prompt("Nouveau nom ?", cur);
+      if (!name || name === cur) return;
+      const toast = $("filesToast");
+      try {
+        const { res, data } = await api("/api/files/rename", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: filesSelected, name }),
+        });
+        toast.className = "toast" + (res.ok && data.ok ? "" : " err");
+        toast.textContent = data.message || data.error || "…";
+        if (res.ok && data.ok) {
+          filesSelected = data.path || "";
+          await loadFiles(data.dir || filesPath);
+          if (filesSelected) openFile(filesSelected, name);
+        }
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    };
+    $("btnFilesZip").onclick = async () => {
+      if (!filesSelected) return;
+      const toast = $("filesToast");
+      toast.className = "toast";
+      toast.textContent = "Compression…";
+      try {
+        const { res, data } = await api("/api/files/compress", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: filesSelected }),
+        });
+        toast.className = "toast" + (res.ok && data.ok ? "" : " err");
+        toast.textContent = data.message || data.error || "…";
+        if (res.ok && data.ok) await loadFiles(data.dir || filesPath);
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    };
+    $("filesUploadInput").onchange = (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = "";
+      uploadSelectedFile(f);
+    };
+
+    function fmtBytes(n) {
+      n = Number(n) || 0;
+      if (n < 1024) return n + " B";
+      if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+      if (n < 1073741824) return (n / 1048576).toFixed(1) + " MB";
+      return (n / 1073741824).toFixed(2) + " GB";
+    }
+
+    async function refreshBackups() {
+      const wrap = $("backupsList");
+      wrap.innerHTML = "";
+      const { data } = await api("/api/backups");
+      const list = data.backups || [];
+      if (!list.length) {
+        wrap.innerHTML = '<div class="players-empty">Aucun backup.</div>';
+        return;
+      }
+      list.forEach((b) => {
+        const row = document.createElement("div");
+        row.className = "player-row";
+        const left = document.createElement("div");
+        left.innerHTML = `<strong style="color:var(--navy)">${b.name}</strong><div style="color:var(--muted);font-size:.8rem;margin-top:4px">${fmtBytes(b.size)} · ${new Date((b.mtime || 0) * 1000).toLocaleString()}</div>`;
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        const restore = document.createElement("button");
+        restore.className = "btn";
+        restore.type = "button";
+        restore.textContent = "Restaurer";
+        restore.onclick = async () => {
+          if (!confirm(`Restaurer ${b.name} ? Le serveur sera stoppé.`)) return;
+          const toast = $("backupsToast");
+          toast.className = "toast";
+          toast.textContent = "Restauration…";
+          const { res, data: d } = await api("/api/backups/restore", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: b.name }),
+          });
+          toast.className = "toast" + (res.ok && d.ok ? "" : " err");
+          toast.textContent = d.message || d.error || "…";
+          await refreshBackups();
+        };
+        const del = document.createElement("button");
+        del.className = "btn btn-danger";
+        del.type = "button";
+        del.textContent = "Suppr.";
+        del.onclick = async () => {
+          if (!confirm(`Supprimer ${b.name} ?`)) return;
+          await api("/api/backups/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: b.name }),
+          });
+          await refreshBackups();
+        };
+        actions.appendChild(restore);
+        actions.appendChild(del);
+        row.appendChild(left);
+        row.appendChild(actions);
+        wrap.appendChild(row);
+      });
+    }
+
+    async function refreshResources() {
+      const { data } = await api("/api/resources");
+      if (!data.ok) return;
+      $("resCpu").textContent = `${data.cpu_percent}% · load ${((data.loadavg || [])[0] || 0).toFixed(2)}`;
+      const m = data.memory || {};
+      $("resMem").textContent = `${fmtBytes(m.used)} / ${fmtBytes(m.total)} (${m.percent}%)`;
+      const d = data.disk || {};
+      $("resDisk").textContent = `${fmtBytes(d.used)} / ${fmtBytes(d.total)} (${d.percent}%)`;
+      $("resGmod").textContent = fmtBytes(data.gmod_rss || 0);
+    }
+
+    async function refreshActivity() {
+      const wrap = $("activityList");
+      wrap.innerHTML = "";
+      const { data } = await api("/api/activity?limit=40");
+      (data.entries || []).forEach((e) => {
+        const row = document.createElement("div");
+        row.className = "player-row";
+        row.innerHTML = `<div><strong style="color:${e.ok ? "var(--ok)" : "var(--bad)"}">${e.action}</strong><div style="color:var(--muted);font-size:.8rem;margin-top:4px">${e.detail || ""}</div></div><div style="color:var(--muted);font-size:.75rem">${e.iso ? new Date(e.iso).toLocaleString() : ""}</div>`;
+        wrap.appendChild(row);
+      });
+      if (!(data.entries || []).length) wrap.innerHTML = '<div class="players-empty">Aucune activité.</div>';
+    }
+
+    $("btnBackupCreate").onclick = async () => {
+      const note = prompt("Note (optionnel) ?", "") || "";
+      const toast = $("backupsToast");
+      toast.className = "toast";
+      toast.textContent = "Création backup…";
+      try {
+        const { res, data } = await api("/api/backups", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ note }),
+        });
+        toast.className = "toast" + (res.ok && data.ok ? "" : " err");
+        toast.textContent = data.message || data.error || "…";
+        await refreshBackups();
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    };
+    $("btnBackupRefresh").onclick = () => refreshBackups().catch(() => {});
+    $("btnResRefresh").onclick = () => refreshResources().catch(() => {});
+    $("btnActivityRefresh").onclick = () => refreshActivity().catch(() => {});
+    $("btnSteamUpdate").onclick = async () => {
+      if (!confirm("Stopper le serveur et lancer SteamCMD update+validate ? (peut prendre plusieurs minutes)")) return;
+      const toast = $("systemToast");
+      toast.className = "toast";
+      toast.textContent = "Update SteamCMD en cours…";
+      try {
+        const { res, data } = await api("/api/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ validate: true }),
+        });
+        toast.className = "toast" + (res.ok && data.ok ? "" : " err");
+        toast.textContent = data.message || data.error || "…";
+        if (data.output) appendLog(data.output, "log-steam");
+        await refreshStatus();
+        await refreshActivity();
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    };
+    $("btnChangelevel").onclick = async () => {
+      const map = ($("changelevelMap").value || "").trim() || ($("cfgForm").elements.namedItem("map") || {}).value;
+      if (!map) return alert("Map requise");
+      const toast = $("cfgToast");
+      toast.className = "toast";
+      toast.textContent = "Changelevel…";
+      try {
+        const { res, data } = await api("/api/changelevel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ map }),
+        });
+        toast.className = "toast" + (res.ok && data.ok ? "" : " err");
+        toast.textContent = data.message || data.error || "…";
+      } catch (e) {
+        toast.className = "toast err";
+        toast.textContent = String(e.message || e);
+      }
+    };
+
+    $("btnLogout").onclick = async () => {
+      await fetch("/api/logout", { method: "POST" });
+      showLogin();
+    };
+    $("cfgForm").addEventListener("submit", (e) => { e.preventDefault(); saveConfig(false); });
+    $("btnSaveRestart").onclick = () => saveConfig(true);
+
+    $("pwdForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const toast = $("pwdToast");
+      toast.className = "toast";
+      toast.textContent = "…";
+      const form = $("pwdForm");
+      const payload = {
+        current: form.elements.namedItem("current").value,
+        new_password: form.elements.namedItem("new_password").value,
+        confirm: form.elements.namedItem("confirm").value,
+      };
+      try {
+        const { res, data } = await api("/api/password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok || !data.ok) {
+          toast.className = "toast err";
+          toast.textContent = data.error || "Erreur";
+          return;
+        }
+        toast.textContent = data.message || "OK";
+        form.reset();
+      } catch (err) {
+        toast.className = "toast err";
+        toast.textContent = String(err.message || err);
+      }
+    });
+
+    async function refreshAdminUsers() {
+      const list = $("adminUsersList");
+      if (!list) return;
+      const { res, data } = await api("/api/admin/users");
+      if (!res.ok || !data.ok) {
+        list.innerHTML = `<div class="players-empty">${data.error || "Erreur"}</div>`;
+        return;
+      }
+      const users = data.users || [];
+      if (!users.length) {
+        list.innerHTML = `<div class="players-empty">Aucun compte.</div>`;
+        return;
+      }
+      list.innerHTML = users.map((u) => {
+        const me = u.username === currentUser.username;
+        return `<div class="player-row" style="justify-content:space-between;gap:12px">
+          <div>
+            <div class="player-nick">${escapeHtml(u.username)}${me ? " (toi)" : ""}</div>
+            <div class="player-meta">rôle : ${escapeHtml(u.role || "user")}</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn" type="button" data-reset="${escapeHtml(u.username)}">Reset MDP</button>
+            <button class="btn btn-ghost" type="button" data-del="${escapeHtml(u.username)}" ${me ? "disabled" : ""}>Supprimer</button>
+          </div>
+        </div>`;
+      }).join("");
+      list.querySelectorAll("[data-del]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm(`Supprimer ${btn.dataset.del} ?`)) return;
+          const toast = $("adminToast");
+          const { res, data } = await api(`/api/admin/users/${encodeURIComponent(btn.dataset.del)}`, { method: "DELETE" });
+          toast.className = res.ok && data.ok ? "toast" : "toast err";
+          toast.textContent = data.message || data.error || "…";
+          refreshAdminUsers().catch(() => {});
+        });
+      });
+      list.querySelectorAll("[data-reset]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const pwd = prompt(`Nouveau mot de passe pour ${btn.dataset.reset} (min. 6) :`);
+          if (!pwd) return;
+          const toast = $("adminToast");
+          const { res, data } = await api(`/api/admin/users/${encodeURIComponent(btn.dataset.reset)}/password`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: pwd }),
+          });
+          toast.className = res.ok && data.ok ? "toast" : "toast err";
+          toast.textContent = data.message || data.error || "…";
+        });
+      });
+    }
+
+    function escapeHtml(s) {
+      return String(s || "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      })[c]);
+    }
+
+    $("btnUsersRefresh")?.addEventListener("click", () => refreshAdminUsers().catch(() => {}));
+    $("adminUserForm")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const toast = $("adminToast");
+      toast.className = "toast";
+      toast.textContent = "…";
+      const form = $("adminUserForm");
+      const payload = {
+        username: form.elements.namedItem("username").value.trim(),
+        password: form.elements.namedItem("password").value,
+        role: form.elements.namedItem("role").value,
+      };
+      try {
+        const { res, data } = await api("/api/admin/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok || !data.ok) {
+          toast.className = "toast err";
+          toast.textContent = data.error || "Erreur";
+          return;
+        }
+        toast.textContent = data.message || "OK";
+        form.reset();
+        refreshAdminUsers().catch(() => {});
+      } catch (err) {
+        toast.className = "toast err";
+        toast.textContent = String(err.message || err);
+      }
+    });
+
+    $("cmdForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const cmd = $("cmdInput").value.trim();
+      if (!cmd || !ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: "cmd", data: cmd }));
+      $("cmdInput").value = "";
+    });
+
+    (async () => {
+      const res = await fetch("/api/me");
+      const data = await res.json();
+      if (data.authed) {
+        currentUser = { username: data.username || "", role: data.role || "user" };
+        showApp();
+      } else showLogin();
+    })();
+  </script>
+</body>
+</html>

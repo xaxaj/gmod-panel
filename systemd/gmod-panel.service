@@ -1,0 +1,14 @@
+[Unit]
+Description=GMod Web Panel
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/gmod-panel
+EnvironmentFile=/opt/gmod-panel/.env
+ExecStart=/opt/gmod-panel/venv/bin/python /opt/gmod-panel/app.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

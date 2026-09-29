@@ -1,0 +1,79 @@
+# Panel GMod
+
+Panel web léger pour gérer un serveur dédié **Garry's Mod** sur un VPS (console live, config, fichiers, joueurs, backups, ressources).
+
+Inspiré des panels type Pterodactyl/Pelican, mais **focalisé GMod** et simple à installer.
+
+## Fonctionnalités
+
+- Start / stop / restart du service `gmod`
+- Console live (WebSocket) + commandes RCON
+- Configuration serveur (hostname, map, Workshop, GSLT, FastDL…)
+- Explorateur de fichiers (upload, édition, archives)
+- Joueurs en ligne + grades
+- Backups, ressources CPU/RAM/disque, activité
+- **Comptes panel** : rôles `admin` / `user` (onglet Admin)
+
+## Prérequis
+
+- Debian / Ubuntu (root)
+- Python 3.11+
+- Un serveur GMod déjà installé (SteamCMD) — par défaut : `/home/steam/gmod`
+- Service systemd `gmod` pour le DS (optionnel mais recommandé)
+
+## Installation rapide
+
+```bash
+git clone https://github.com/TON_COMPTE/gmod-panel.git /opt/gmod-panel
+cd /opt/gmod-panel
+sudo bash install.sh
+```
+
+Le script crée un venv, un `.env`, le service `gmod-panel`, et un compte **admin** (mot de passe affiché une fois).
+
+Ouvre `http://IP:8080` → connecte-toi → change le mot de passe.
+
+### Variables `.env`
+
+| Variable | Rôle |
+|----------|------|
+| `PANEL_PASSWORD` | Bootstrap admin si `users.json` absent |
+| `PANEL_PORT` | Port HTTP (défaut `8080`) |
+| `SESSION_SECRET` | Secret cookies de session |
+| `GMOD_DIR` | Racine du serveur GMod |
+| `RCON_HOST` / `RCON_PORT` | Accès RCON |
+
+## Côté admin
+
+Connecté en **admin** :
+
+1. Onglet **Admin** → créer des comptes (`admin` ou `user`)
+2. Réinitialiser / supprimer des utilisateurs
+3. Chaque compte change son propre mot de passe dans **Mot de passe**
+
+Les utilisateurs `user` ont accès au panel serveur ; seuls les `admin` gèrent les comptes.
+
+## Mise à jour
+
+```bash
+cd /opt/gmod-panel
+git pull
+./venv/bin/pip install -r requirements.txt
+sudo systemctl restart gmod-panel
+```
+
+## Sécurité
+
+- Ne commit **jamais** `.env`, `users.json`, `server-config.json`
+- Expose le panel derrière un reverse-proxy HTTPS (Caddy/Nginx) en prod
+- Garde le RCON et le GSLT secrets
+
+## Roadmap (pas encore inclus)
+
+- Multi-serveurs / multi-nodes façon Pterodactyl
+- Installateur SteamCMD GMod intégré
+- 2FA, ACL par onglet
+
+## Licence
+
+MIT — libre d’usage et de modification.
