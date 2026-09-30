@@ -1366,6 +1366,7 @@
       <div class="field" id="modalField">
         <label id="modalLabel">Valeur</label>
         <input id="modalInput" type="text" autocomplete="off" />
+        <select id="modalSelect" class="hidden"></select>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn" id="modalCancel">Annuler</button>
@@ -3395,6 +3396,7 @@
     $("modalForm")?.addEventListener("submit", (e) => {
       e.preventDefault();
       if (_modalMode === "prompt") closeModal($("modalInput").value);
+      else if (_modalMode === "select") closeModal($("modalSelect")?.value ?? "");
       else if (_modalMode === "alert") closeModal(true);
       else closeModal(true);
     });
@@ -3519,13 +3521,23 @@
         _modalResolve = resolve;
         const mode = opts.mode || "confirm";
         _modalMode = mode;
-        $("modalTitle").textContent = opts.title || (mode === "prompt" ? "Saisie" : mode === "alert" ? "Info" : "Confirmation");
+        $("modalTitle").textContent = opts.title || (mode === "prompt" ? "Saisie" : mode === "alert" ? "Info" : mode === "select" ? "Choisir" : "Confirmation");
         $("modalHint").textContent = opts.message || opts.hint || "";
         $("modalHint").style.display = (opts.message || opts.hint) ? "" : "none";
         const field = $("modalField");
         const input = $("modalInput");
+        const select = $("modalSelect");
         const cancel = $("modalCancel");
         const ok = $("modalOk");
+        if (select) {
+          select.classList.add("hidden");
+          select.innerHTML = "";
+          select.required = false;
+        }
+        if (input) {
+          input.classList.remove("hidden");
+          input.required = false;
+        }
         if (mode === "prompt") {
           field.classList.remove("hidden");
           $("modalLabel").textContent = opts.label || "Valeur";
@@ -3536,16 +3548,36 @@
           ok.textContent = opts.okText || "OK →";
           ok.className = "btn btn-primary";
           setTimeout(() => { input.focus(); input.select(); }, 30);
+        } else if (mode === "select") {
+          field.classList.remove("hidden");
+          $("modalLabel").textContent = opts.label || "Choix";
+          if (input) input.classList.add("hidden");
+          if (select) {
+            select.classList.remove("hidden");
+            select.required = opts.required !== false;
+            const options = Array.isArray(opts.options) ? opts.options : [];
+            select.innerHTML = options.map((o) => {
+              const val = typeof o === "string" ? o : String(o.value ?? "");
+              const label = typeof o === "string" ? o : String(o.label ?? o.value ?? "");
+              return `<option value="${escapeHtml(val)}">${escapeHtml(label)}</option>`;
+            }).join("");
+            const want = opts.value != null ? String(opts.value) : "";
+            if (want && [...select.options].some((o) => o.value === want)) select.value = want;
+            else if (select.options.length) select.selectedIndex = 0;
+          }
+          cancel.classList.remove("hidden");
+          cancel.textContent = opts.cancelText || "Annuler";
+          ok.textContent = opts.okText || "OK →";
+          ok.className = "btn btn-primary";
+          setTimeout(() => select?.focus(), 30);
         } else if (mode === "alert") {
           field.classList.add("hidden");
-          input.required = false;
           cancel.classList.add("hidden");
           ok.textContent = opts.okText || "OK";
           ok.className = "btn btn-primary";
           setTimeout(() => ok.focus(), 30);
         } else {
           field.classList.add("hidden");
-          input.required = false;
           cancel.classList.remove("hidden");
           cancel.textContent = opts.cancelText || "Annuler";
           ok.textContent = opts.okText || "Confirmer →";
@@ -3560,6 +3592,9 @@
     }
     function openPrompt(opts = {}) {
       return openModal({ mode: "prompt", ...opts });
+    }
+    function openSelect(opts = {}) {
+      return openModal({ mode: "select", ...opts });
     }
     function openAlert(message, opts = {}) {
       return openModal({ mode: "alert", title: opts.title || "Info", message, ...opts });
@@ -3644,22 +3679,29 @@
 
     async function changeServerOwner(id, currentOwner) {
       await loadAdminOwnerOptions();
-      const opts = (adminUsersCache || []).map((u) => u.username);
-      if (!opts.length) {
-        await openAlert("Aucun compte panel.", { title: "User" });
+      const users = adminUsersCache || [];
+      if (!users.length) {
+        await openAlert("Aucun compte panel. Crée d’abord un user (ex. test).", { title: "Propriétaire" });
         return;
       }
-      // prompt simple : liste dans le message + saisie du username
-      const picked = await openPrompt({
-        title: "Utilisateur du serveur",
-        hint: `Comptes : ${opts.join(", ")}`,
-        label: "Identifiant",
-        value: currentOwner || currentUser.username || opts[0],
+      const options = [
+        { value: "", label: "— aucun (tous les users) —" },
+        ...users.map((u) => ({
+          value: u.username,
+          label: `${u.username} (${u.role || "user"})`,
+        })),
+      ];
+      const picked = await openSelect({
+        title: "Propriétaire du serveur",
+        hint: `Serveur « ${id} » — le compte choisi verra ce serveur dans son dashboard.`,
+        label: "Propriétaire",
+        options,
+        value: currentOwner || "",
         okText: "Assigner →",
+        required: false,
       });
       if (picked == null) return;
       const owner = String(picked).trim();
-      if (!owner) return;
       const toast = $("adminServerToast");
       const { res, data } = await api(`/api/servers/${encodeURIComponent(id)}`, {
         method: "PATCH",
@@ -3670,7 +3712,11 @@
         toast.className = res.ok && data.ok ? "toast" : "toast err";
         toast.textContent = data.message || data.error || "…";
       }
-      if (res.ok && data.ok) refreshAdminServers().catch(() => {});
+      if (!res.ok || !data.ok) {
+        await openAlert(data.error || "Erreur assignation", { title: "Erreur" });
+        return;
+      }
+      refreshAdminServers().catch(() => {});
     }
 
     async function refreshAdminServers() {
@@ -3691,7 +3737,7 @@
       if ($("statSrvOnline")) $("statSrvOnline").textContent = String(online);
       if ($("statSrvOffline")) $("statSrvOffline").textContent = String(servers.length - online);
       list.innerHTML = `<table class="sp-table">
-        <thead><tr><th>Nom</th><th>ID</th><th>User</th><th>Port</th><th>Statut</th><th>Action</th></tr></thead>
+        <thead><tr><th>Nom</th><th>ID</th><th>Propriétaire</th><th>Port</th><th>Statut</th><th>Action</th></tr></thead>
         <tbody>
           ${servers.map((s) => {
             const on = !!s.running;
@@ -3705,7 +3751,7 @@
               <td><div class="sp-actions-cell">
                 <button class="sp-link" type="button" data-use="${escapeHtml(s.id)}">Ouvrir</button>
                 <button class="sp-link" type="button" data-rename="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name || s.id)}">Renommer</button>
-                <button class="sp-link" type="button" data-owner="${escapeHtml(s.id)}" data-owner-name="${escapeHtml(owner)}">User</button>
+                <button class="sp-link" type="button" data-owner="${escapeHtml(s.id)}" data-owner-name="${escapeHtml(owner)}" title="Changer le propriétaire">Propriétaire</button>
                 <button class="sp-link danger" type="button" data-rm-server="${escapeHtml(s.id)}">Supprimer</button>
               </div></td>
             </tr>`;
