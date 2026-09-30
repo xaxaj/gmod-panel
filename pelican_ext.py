@@ -21,17 +21,46 @@ MAX_ACTIVITY = 200
 MAX_BACKUPS = 20
 STEAMCMD_URL = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz"
 
-# id serveur → {status: pending|running|ok|error, detail: str}
-_install_jobs: dict[str, dict[str, str]] = {}
+# id serveur → {status, detail, log_tail, updated_at}
+_install_jobs: dict[str, dict[str, Any]] = {}
+_install_threads: dict[str, Any] = {}
 
 
-def get_install_job(server_id: str) -> dict[str, str]:
-    return dict(_install_jobs.get(server_id) or {})
+def get_install_job(server_id: str) -> dict[str, Any]:
+    sid = str(server_id)
+    job = dict(_install_jobs.get(sid) or {})
+    thr = _install_threads.get(sid)
+    if job.get("status") == "running" and thr is not None and not thr.is_alive():
+        # thread morte sans mise à jour finale
+        job = {
+            "status": "error",
+            "detail": job.get("detail") or "thread install interrompue",
+            "log_tail": job.get("log_tail") or "",
+            "updated_at": int(time.time()),
+        }
+        _install_jobs[sid] = job
+    return job
 
 
 def has_gmod_bin(gmod_dir: Path) -> bool:
     gdir = Path(gmod_dir)
     return (gdir / "srcds_run_x64").exists() or (gdir / "srcds_linux").exists()
+
+
+def _set_install_job(server_id: str, **fields: Any) -> None:
+    sid = str(server_id)
+    cur = dict(_install_jobs.get(sid) or {})
+    log_line = fields.pop("log_line", None)
+    cur.update(fields)
+    cur["updated_at"] = int(time.time())
+    if log_line is not None:
+        line = str(log_line or "").rstrip()
+        if line:
+            prev = str(cur.get("log_tail") or "")
+            merged = (prev + "\n" + line).strip()
+            cur["log_tail"] = merged[-8000:]
+            cur["detail"] = line[:200]
+    _install_jobs[sid] = cur
 
 
 def _steam_chown(path: Path) -> None:
@@ -314,6 +343,7 @@ def steamcmd_update(
     validate: bool = True,
     gmod_dir: Optional[Path] = None,
     steamcmd: Optional[Path] = None,
+    server_id: Optional[str] = None,
 ) -> str:
     gdir = Path(gmod_dir) if gmod_dir else GMOD_DIR
     gdir.mkdir(parents=True, exist_ok=True)
@@ -321,6 +351,9 @@ def steamcmd_update(
     cmd_bin = Path(steamcmd) if steamcmd else ensure_steamcmd()
     if not cmd_bin.exists():
         raise FileNotFoundError(f"steamcmd introuvable: {cmd_bin}")
+    if server_id:
+        _set_install_job(server_id, status="running", detail="SteamCMD démarré…")
+
     cmd = [
         str(cmd_bin),
         "+force_install_dir",
@@ -335,54 +368,109 @@ def steamcmd_update(
     if validate:
         cmd.append("validate")
     cmd.append("+quit")
-    proc = subprocess.run(
-        cmd,
-        cwd=str(cmd_bin.parent),
-        capture_output=True,
-        text=True,
-        timeout=7200,
-        user="steam",
-    )
-    out = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
-    ok = proc.returncode == 0 and has_gmod_bin(gdir)
-    log_activity("steamcmd.update", f"code={proc.returncode} dir={gdir}", ok)
+
+    log_path = gdir / ".panel-install.log"
+    lines: list[str] = []
+    with open(log_path, "w", encoding="utf-8", errors="replace") as logf:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(cmd_bin.parent),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            user="steam",
+            env={
+                **os.environ,
+                "HOME": "/home/steam",
+                "USER": "steam",
+            },
+        )
+        assert proc.stdout is not None
+        for raw in proc.stdout:
+            line = (raw or "").rstrip()
+            if not line:
+                continue
+            logf.write(line + "\n")
+            logf.flush()
+            lines.append(line)
+            if server_id:
+                _set_install_job(server_id, status="running", log_line=line)
+            # aussi dans le journal système (visible via journalctl -t …)
+            try:
+                subprocess.run(
+                    ["logger", "-t", f"gmod-install-{server_id or 'panel'}", line[:900]],
+                    capture_output=True,
+                    timeout=2,
+                )
+            except Exception:
+                pass
+        code = proc.wait(timeout=7200)
+
+    try:
+        _steam_chown(log_path)
+    except Exception:
+        pass
+
+    out = "\n".join(lines[-120:])
+    ok = code == 0 and has_gmod_bin(gdir)
+    log_activity("steamcmd.update", f"code={code} dir={gdir}", ok)
     if not ok:
         raise RuntimeError(
-            (out[-1800:] if out else "")
-            or f"steamcmd exit {proc.returncode} — srcds toujours absent dans {gdir}"
+            out[-1800:]
+            or f"steamcmd exit {code} — srcds toujours absent dans {gdir}"
         )
     _steam_chown(gdir)
     return out[-3000:]
 
 
-def start_gmod_install(server_id: str, gmod_dir: Path, installer: Callable[[Path], str]) -> dict[str, str]:
+def start_gmod_install(server_id: str, gmod_dir: Path, installer: Callable[..., str]) -> dict[str, Any]:
     """Lance l'install GMod en arrière-plan (clone ou SteamCMD)."""
-    sid = str(server_id)
-    cur = _install_jobs.get(sid) or {}
-    if cur.get("status") == "running":
-        return dict(cur)
-    if has_gmod_bin(gmod_dir):
-        _install_jobs[sid] = {"status": "ok", "detail": "déjà installé"}
-        return dict(_install_jobs[sid])
-
     import threading
 
-    _install_jobs[sid] = {"status": "running", "detail": "Téléchargement GMod (SteamCMD)…"}
+    sid = str(server_id)
+    cur = get_install_job(sid)
+    if cur.get("status") == "running":
+        thr = _install_threads.get(sid)
+        if thr is not None and thr.is_alive():
+            return cur
+    if has_gmod_bin(gmod_dir):
+        _set_install_job(sid, status="ok", detail="déjà installé", log_tail="")
+        return get_install_job(sid)
+
+    _set_install_job(
+        sid,
+        status="running",
+        detail="Préparation SteamCMD…",
+        log_tail="Préparation SteamCMD…",
+    )
 
     def _run() -> None:
         try:
+            _set_install_job(sid, status="running", log_line="Vérification / install SteamCMD…")
             ensure_steamcmd()
-            how = installer(Path(gmod_dir))
+            _set_install_job(sid, status="running", log_line="SteamCMD OK — téléchargement Garry's Mod (4020)…")
+            try:
+                how = installer(Path(gmod_dir), server_id=sid)
+            except TypeError:
+                how = installer(Path(gmod_dir))
+            if not has_gmod_bin(gmod_dir):
+                _set_install_job(sid, status="running", log_line="Lancement SteamCMD app_update 4020…")
+                how = steamcmd_update(validate=True, gmod_dir=Path(gmod_dir), server_id=sid)
             if not has_gmod_bin(gmod_dir):
                 raise RuntimeError("install terminée mais srcds_run_x64 introuvable")
-            _install_jobs[sid] = {"status": "ok", "detail": how}
+            _set_install_job(sid, status="ok", detail=str(how or "installé"), log_line=f"OK — {how}")
             log_activity("server.install", f"{sid}: {how}", True)
         except Exception as e:
-            _install_jobs[sid] = {"status": "error", "detail": str(e)[-500:]}
+            _set_install_job(sid, status="error", detail=str(e)[-500:], log_line=f"ERREUR: {e}")
             log_activity("server.install", f"{sid}: {e}", False)
+        finally:
+            _install_threads.pop(sid, None)
 
-    threading.Thread(target=_run, name=f"gmod-install-{sid}", daemon=True).start()
-    return dict(_install_jobs[sid])
+    thr = threading.Thread(target=_run, name=f"gmod-install-{sid}", daemon=True)
+    _install_threads[sid] = thr
+    thr.start()
+    return get_install_job(sid)
 
 
 def kill_gmod(unit: str = "gmod") -> tuple[int, str]:

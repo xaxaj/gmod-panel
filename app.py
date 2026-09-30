@@ -766,7 +766,7 @@ async def servers_create(request: Request):
             write_start_script(cfg)
             write_server_cfg(cfg)
             # Install GMod en arrière-plan (SteamCMD ou clone)
-            job = pelican.start_gmod_install(ctx.id, ctx.gmod_dir, lambda d: srv.install_gmod(d))
+            job = pelican.start_gmod_install(ctx.id, ctx.gmod_dir, srv.install_gmod)
             if job.get("status") == "ok":
                 install_note = f" + {job.get('detail') or 'installé'}"
             elif job.get("status") == "running":
@@ -991,7 +991,7 @@ async def start(request: Request):
     if not pelican.has_gmod_bin(ctx.gmod_dir):
         job = pelican.get_install_job(ctx.id)
         if job.get("status") != "running":
-            pelican.start_gmod_install(ctx.id, ctx.gmod_dir, lambda d: srv.install_gmod(d))
+            pelican.start_gmod_install(ctx.id, ctx.gmod_dir, srv.install_gmod)
             job = pelican.get_install_job(ctx.id)
         detail = job.get("detail") or "installation…"
         if job.get("status") == "error":
@@ -1027,7 +1027,7 @@ async def install_game(request: Request):
     if deny:
         return deny
     ctx = S()
-    job = pelican.start_gmod_install(ctx.id, ctx.gmod_dir, lambda d: srv.install_gmod(d))
+    job = pelican.start_gmod_install(ctx.id, ctx.gmod_dir, srv.install_gmod)
     return {
         "ok": True,
         "message": "Installation GMod lancée" if job.get("status") == "running" else job.get("detail") or "OK",

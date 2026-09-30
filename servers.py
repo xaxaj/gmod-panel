@@ -320,7 +320,12 @@ def clone_game_files(src: Path, dest: Path) -> None:
         pass
 
 
-def install_gmod(dest: Path, *, prefer_clone_from: Optional[Path] = None) -> str:
+def install_gmod(
+    dest: Path,
+    *,
+    prefer_clone_from: Optional[Path] = None,
+    server_id: Optional[str] = None,
+) -> str:
     """Installe GMod dans dest : clone depuis un serveur existant, sinon SteamCMD."""
     import pelican_ext as pelican
 
@@ -338,10 +343,12 @@ def install_gmod(dest: Path, *, prefer_clone_from: Optional[Path] = None) -> str
                 template = p
                 break
     if template is not None:
+        if server_id:
+            pelican._set_install_job(server_id, status="running", log_line=f"Clone depuis {template}…")
         clone_game_files(template, dest)
         return f"cloné depuis {template}"
     pelican.ensure_steamcmd()
-    pelican.steamcmd_update(validate=True, gmod_dir=dest)
+    pelican.steamcmd_update(validate=True, gmod_dir=dest, server_id=server_id)
     return "installé via SteamCMD"
 
 

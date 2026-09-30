@@ -2100,6 +2100,8 @@
     let powerBusy = false;
     let lastRunning = false;
     let lastGameInstalled = false;
+    let lastInstallLogLen = 0;
+    let installPollTimer = null;
 
     function setBusy(busy) {
       powerBusy = !!busy;
@@ -2113,12 +2115,36 @@
       const stop = $("btnStop");
       const restart = $("btnRestart");
       const kill = $("btnKill");
-      const install = $("btnInstallGame");
+      const installBtn = $("btnInstallGame");
+      const hintTxt = $("powerHint")?.textContent || "";
+      const installing = !lastGameInstalled && hintTxt.includes("en cours");
       if (start) start.disabled = busy || running;
       if (stop) stop.disabled = busy || !running;
       if (restart) restart.disabled = busy || !running || !lastGameInstalled;
       if (kill) kill.disabled = busy || !running;
-      if (install) install.disabled = busy || lastGameInstalled;
+      if (installBtn) installBtn.disabled = busy || lastGameInstalled || installing;
+    }
+
+    function feedInstallLogs(job) {
+      const tail = String((job && job.log_tail) || "");
+      if (!tail) return;
+      if (tail.length <= lastInstallLogLen) return;
+      const chunk = tail.slice(lastInstallLogLen);
+      lastInstallLogLen = tail.length;
+      chunk.split("\n").forEach((line) => {
+        const t = line.trim();
+        if (t) appendLog(t, /error|failed|fatal/i.test(t) ? "log-error" : "log-steam");
+      });
+    }
+
+    function ensureInstallPolling(active) {
+      if (active) {
+        if (installPollTimer) return;
+        installPollTimer = setInterval(() => refreshStatus().catch(() => {}), 2000);
+      } else if (installPollTimer) {
+        clearInterval(installPollTimer);
+        installPollTimer = null;
+      }
     }
 
     function renderStatus(s) {
@@ -2145,17 +2171,22 @@
       if (s.steam_connect) $("btnSteam").href = s.steam_connect;
       const hint = $("powerHint");
       const job = s.install || {};
+      feedInstallLogs(job);
+      const installing = !lastGameInstalled && job.status === "running";
       if (hint) {
-        if (!lastGameInstalled && job.status === "running") {
+        if (installing) {
           hint.textContent = `Installation GMod en cours… ${job.detail || ""}`;
         } else if (!lastGameInstalled && job.status === "error") {
-          hint.textContent = `Install échouée : ${job.detail || "erreur"} — clique Installer GMod`;
+          hint.textContent = `Install échouée : ${job.detail || "erreur"} — reclique Installer GMod`;
         } else if (!lastGameInstalled) {
-          hint.textContent = "GMod pas encore installé — Start lance SteamCMD, ou clique Installer GMod";
+          hint.textContent = "GMod pas encore installé — clique Installer GMod (5–20 min)";
+        } else if (job.status === "ok") {
+          hint.textContent = "GMod installé — tu peux Start.";
         } else {
           hint.textContent = "Start, stop, restart — comme sur ton espace client.";
         }
       }
+      ensureInstallPolling(installing);
       syncPowerButtons();
     }
 
