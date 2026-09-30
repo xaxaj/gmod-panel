@@ -327,6 +327,7 @@ def write_start_script(cfg: dict[str, Any]) -> None:
     body = f"#!/bin/bash\ncd {S().gmod_dir}\nexec \\\n"
     body += "  \\\n".join(f"  {a}" for a in args)
     body += ' \\\n  "$@"\n'
+    S().start_sh.parent.mkdir(parents=True, exist_ok=True)
     S().start_sh.write_text(body, encoding="utf-8")
     S().start_sh.chmod(0o755)
     # ownership
