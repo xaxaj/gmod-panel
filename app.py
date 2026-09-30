@@ -541,6 +541,38 @@ _status_rcon_cache: dict[str, tuple[float, dict]] = {}
 STATUS_RCON_TTL = 15.0
 
 
+def format_uptime(seconds: float) -> str:
+    sec = max(0, int(seconds))
+    days, rem = divmod(sec, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins, secs = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours}h {mins}m"
+    if hours:
+        return f"{hours}h {mins}m {secs}s"
+    if mins:
+        return f"{mins}m {secs}s"
+    return f"{secs}s"
+
+
+def service_uptime_seconds(unit: str) -> Optional[float]:
+    """Uptime via systemd (sans RCON → pas de spam console jeu)."""
+    code, out = run_systemctl("show", unit, "-p", "ActiveEnterTimestampMonotonic", "--value")
+    if code != 0:
+        return None
+    try:
+        entered = int((out or "").strip() or "0")
+    except ValueError:
+        return None
+    if entered <= 0:
+        return None
+    try:
+        now_us = int(time.clock_gettime(time.CLOCK_MONOTONIC) * 1_000_000)
+    except Exception:
+        return None
+    return max(0.0, (now_us - entered) / 1_000_000.0)
+
+
 def server_status(*, force_rcon: bool = False) -> dict:
     cfg = load_config()
     code, active = run_systemctl("is-active", S().unit)
@@ -562,20 +594,29 @@ def server_status(*, force_rcon: bool = False) -> dict:
         "server": S().to_public(),
         "game_installed": pelican.has_gmod_bin(S().gmod_dir),
         "install": pelican.get_install_job(S().id),
+        "uptime": None,
+        "uptime_server": None,
+        "uptime_seconds": None,
     }
+    if running:
+        secs = service_uptime_seconds(S().unit)
+        if secs is not None:
+            info["uptime_seconds"] = int(secs)
+            info["uptime_server"] = format_uptime(secs)
+            info["uptime"] = info["uptime_server"]
     if running and rcon_password():
         sid = S().id
         now = time.time()
         cached = _status_rcon_cache.get(sid)
         if not force_rcon and cached and (now - cached[0]) < STATUS_RCON_TTL:
             for k, v in cached[1].items():
-                if v is not None:
+                if v is not None and k not in ("uptime", "uptime_server", "uptime_seconds"):
                     info[k] = v
         else:
             try:
                 rcon = SourceRcon(RCON_HOST, connect_port, rcon_password(), timeout=3.0)
                 status = rcon.command("status")
-                parsed = {"hostname": None, "map": None, "players": None, "uptime": None, "uptime_server": None}
+                parsed = {"hostname": None, "map": None, "players": None}
                 for line in status.splitlines():
                     low = line.lower().strip()
                     if low.startswith("hostname:"):
@@ -584,12 +625,6 @@ def server_status(*, force_rcon: bool = False) -> dict:
                         parsed["map"] = line.split(":", 1)[1].strip() if ":" in line else line
                     elif "players" in low and ":" in line:
                         parsed["players"] = line.split(":", 1)[1].strip()
-                    elif low.startswith("uptime"):
-                        raw = line.split(":", 1)[1].strip() if ":" in line else line.strip()
-                        parsed["uptime"] = raw
-                        # "1s map, 11m 20s server" → garder surtout l'uptime serveur
-                        m = re.search(r",\s*([^,]+?)\s+server\s*$", raw, re.I)
-                        parsed["uptime_server"] = (m.group(1).strip() if m else raw)
                 _status_rcon_cache[sid] = (now, parsed)
                 for k, v in parsed.items():
                     if v is not None:

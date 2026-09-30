@@ -2100,6 +2100,14 @@
       return "log-line";
     }
 
+    let lastConsoleBanner = "";
+
+    function clearConsole() {
+      if (consoleEl) consoleEl.innerHTML = "";
+      lastConsoleBanner = "";
+      lastInstallLogLen = 0;
+    }
+
     function appendLog(text, cls = "log-line") {
       const clean = stripAnsi(text);
       if (!clean) return;
@@ -2110,6 +2118,11 @@
       if (/^(hostname|version|udp\/ip|steamid|map|players|uptime)\s*:/i.test(clean)) return;
       if (/^#\s*userid\s+name\s+uniqueid/i.test(clean)) return;
       if (/^#end\b/i.test(clean)) return;
+      // bannière WS (évite le double "Console · …" au re-open)
+      if (/^Console ·/i.test(clean)) {
+        if (clean === lastConsoleBanner) return;
+        lastConsoleBanner = clean;
+      }
       const line = document.createElement("div");
       line.className = classifyLog(clean, cls);
       line.textContent = clean;
@@ -2327,6 +2340,7 @@
       try { localStorage.setItem("x_panel_server", id); } catch (_) {}
       updateActiveServerLabel();
       if (consoleEl) consoleEl.innerHTML = "";
+      clearConsole();
       appendLog(`> SERVEUR → ${id}`, "log-cmd");
       connectWs();
       await Promise.all([
@@ -2365,13 +2379,15 @@
       if (!id) return;
       if (dashTimer) { clearInterval(dashTimer); dashTimer = null; }
       dashView.classList.add("hidden");
+      const switched = currentServerId !== id;
       currentServerId = id;
       filesPath = "";
       filesParent = "";
       filesSelected = "";
+      if (switched) clearConsole();
       try { localStorage.setItem("x_panel_server", id); } catch (_) {}
       if (!skipRoute) setRoute(`/servers/${encodeURIComponent(id)}`, { replace });
-      showApp();
+      showApp({ forceStatus: true });
     }
 
     async function applyRoute() {
@@ -2752,27 +2768,28 @@
       if (!skipRoute) setRoute(tab === "servers" ? "/admin/servers" : "/admin/users");
     }
 
-    function showApp() {
+    function showApp({ forceStatus = false } = {}) {
       loginView.classList.add("hidden");
       dashView.classList.add("hidden");
       adminView.classList.add("hidden");
       appView.classList.remove("hidden");
       applyRoleUI();
       updateActiveServerLabel();
-      const needWs = !(ws && ws.readyState === 1);
       loadServers().then(() => {
         updateActiveServerLabel();
         refreshStatus().catch(() => {});
         loadConfig().catch(() => {});
-        if (needWs || !ws || ws.readyState > 1) connectWs();
+        connectWs();
       }).catch(() => {
         refreshStatus().catch(() => {});
         loadConfig().catch(() => {});
-        if (needWs || !ws || ws.readyState > 1) connectWs();
+        connectWs();
       });
+      if (forceStatus) refreshStatus().catch(() => {});
       if (statusTimer) clearInterval(statusTimer);
       if (playersTimer) clearInterval(playersTimer);
-      statusTimer = setInterval(() => refreshStatus().catch(() => {}), 10000);
+      // uptime systemd → refresh fréquent sans spam RCON
+      statusTimer = setInterval(() => refreshStatus().catch(() => {}), 5000);
       playersTimer = setInterval(() => {
         if (!$("tab-players").classList.contains("hidden")) {
           refreshPlayers().catch(() => {});
