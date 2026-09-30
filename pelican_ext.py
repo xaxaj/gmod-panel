@@ -47,6 +47,14 @@ def has_gmod_bin(gmod_dir: Path) -> bool:
     return (gdir / "srcds_run_x64").exists() or (gdir / "srcds_linux").exists()
 
 
+def _strip_ansi_line(text: str) -> str:
+    s = str(text or "")
+    s = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", s)
+    s = re.sub(r"\x1b\][^\x07]*\x07", "", s)
+    s = re.sub(r"\[[0-9;]*m", "", s)
+    return s.strip()
+
+
 def _set_install_job(server_id: str, **fields: Any) -> None:
     sid = str(server_id)
     cur = dict(_install_jobs.get(sid) or {})
@@ -54,12 +62,14 @@ def _set_install_job(server_id: str, **fields: Any) -> None:
     cur.update(fields)
     cur["updated_at"] = int(time.time())
     if log_line is not None:
-        line = str(log_line or "").rstrip()
+        line = _strip_ansi_line(log_line)
         if line:
             prev = str(cur.get("log_tail") or "")
             merged = (prev + "\n" + line).strip()
             cur["log_tail"] = merged[-8000:]
             cur["detail"] = line[:200]
+    if "detail" in fields and fields["detail"] is not None:
+        cur["detail"] = _strip_ansi_line(fields["detail"])[:200]
     _install_jobs[sid] = cur
 
 

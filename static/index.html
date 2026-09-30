@@ -824,15 +824,29 @@
       padding: 18px;
     }
     .card-head {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
       margin-bottom: 14px;
+    }
+    .card-head > div:first-child {
+      min-width: 0;
+      flex: 1 1 auto;
     }
     .card-head h2 {
       margin: 0; font-size: 1.05rem; letter-spacing: -0.02em; color: var(--navy);
     }
-    .card-head p { margin: 4px 0 0; color: var(--muted); font-size: 0.86rem; }
-
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .card-head p {
+      margin: 4px 0 0; color: var(--muted); font-size: 0.86rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
+    }
+    .actions {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      flex-shrink: 0;
+      justify-content: flex-end;
+      max-width: min(100%, 420px);
+    }
     .btn {
       appearance: none; border: 1px solid var(--line); background: #182338; color: var(--navy);
       padding: 10px 16px; border-radius: 999px; font-weight: 700; font-size: 0.9rem;
@@ -2175,15 +2189,26 @@
       const installing = !lastGameInstalled && job.status === "running";
       if (hint) {
         if (installing) {
-          hint.textContent = `Installation GMod en cours… ${job.detail || ""}`;
+          const raw = stripAnsi(job.detail || "");
+          const pct = raw.match(/progress:\s*([\d.]+)/i);
+          const phase = /verifying/i.test(raw) ? "Vérification" : "Téléchargement";
+          hint.textContent = pct
+            ? `Installation GMod… ${phase} ${pct[1]}%`
+            : `Installation GMod en cours…`;
+          hint.title = raw.slice(0, 300);
         } else if (!lastGameInstalled && job.status === "error") {
-          hint.textContent = `Install échouée : ${job.detail || "erreur"} — reclique Installer GMod`;
+          const err = stripAnsi(job.detail || "erreur").slice(0, 80);
+          hint.textContent = `Install échouée : ${err}`;
+          hint.title = stripAnsi(job.detail || "");
         } else if (!lastGameInstalled) {
-          hint.textContent = "GMod pas encore installé — clique Installer GMod (5–20 min)";
+          hint.textContent = "GMod pas encore installé — clique Installer GMod";
+          hint.title = "";
         } else if (job.status === "ok") {
           hint.textContent = "GMod installé — tu peux Start.";
+          hint.title = "";
         } else {
           hint.textContent = "Start, stop, restart — comme sur ton espace client.";
+          hint.title = "";
         }
       }
       ensureInstallPolling(installing);
