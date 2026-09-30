@@ -1013,6 +1013,35 @@
 
     .toast { font-size: 0.88rem; color: var(--ok); min-height: 1.2em; font-weight: 600; }
     .toast.err { color: var(--bad); }
+
+    #panelUpdateBanner {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 10px 16px;
+      background: linear-gradient(90deg, #1e3a5f, #312e81);
+      border-bottom: 1px solid rgba(165,180,252,.35);
+      color: #e0e7ff;
+      font-size: 0.9rem;
+      font-weight: 600;
+      box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    }
+    #panelUpdateBanner.hidden { display: none !important; }
+    #panelUpdateBanner .upd-msg { min-width: 0; text-align: center; }
+    #panelUpdateBanner .upd-msg small {
+      display: block;
+      font-weight: 500;
+      opacity: .75;
+      font-size: 0.78rem;
+      margin-top: 2px;
+    }
+    #panelUpdateBanner .btn { padding: 8px 14px; font-size: 0.85rem; }
+    body.has-update-banner { padding-top: 58px; }
     .cfg-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
 
     .footer-note {
@@ -1359,6 +1388,14 @@
   </style>
 </head>
 <body>
+  <div id="panelUpdateBanner" class="hidden" role="status">
+    <div class="upd-msg">
+      Nouvelle update panel disponible
+      <small id="panelUpdateDetail"></small>
+    </div>
+    <button type="button" class="btn btn-primary" id="btnPanelUpdate">Mettre à jour →</button>
+    <button type="button" class="btn" id="btnPanelUpdateDismiss" title="Masquer pour cette session">Plus tard</button>
+  </div>
   <div id="modalOverlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <form class="modal-card" id="modalForm">
       <h3 id="modalTitle">Confirmation</h3>
@@ -2251,7 +2288,7 @@
     async function api(path, opts = {}) {
       opts = opts || {};
       const headers = new Headers(opts.headers || {});
-      if (currentServerId && !path.startsWith("/api/servers") && !path.startsWith("/api/me") && !path.startsWith("/api/admin/users") && path !== "/api/login" && path !== "/api/logout" && path !== "/api/password") {
+      if (currentServerId && !path.startsWith("/api/servers") && !path.startsWith("/api/me") && !path.startsWith("/api/admin/users") && !path.startsWith("/api/admin/panel") && path !== "/api/login" && path !== "/api/logout" && path !== "/api/password") {
         headers.set("X-Server-Id", currentServerId);
       }
       const res = await fetch(path, { ...opts, headers });
@@ -2668,7 +2705,9 @@
       if (statusTimer) clearInterval(statusTimer);
       if (playersTimer) clearInterval(playersTimer);
       if (dashTimer) clearInterval(dashTimer);
+      if (panelUpdateTimer) { clearInterval(panelUpdateTimer); panelUpdateTimer = null; }
       if (adminClockTimer) { clearInterval(adminClockTimer); adminClockTimer = null; }
+      renderPanelUpdateBanner(null);
       disconnectWs();
     }
 
@@ -2902,6 +2941,7 @@
         return;
       }
       currentUser = { username: data.username || "admin", role: data.role || "user" };
+      startPanelUpdatePolling();
       applyRoute().catch(() => showDashboard());
     });
 
@@ -3944,11 +3984,107 @@
       $("cmdInput").value = "";
     });
 
+    let panelUpdateTimer = null;
+    let panelUpdateDismissed = "";
+
+    function renderPanelUpdateBanner(info) {
+      const banner = $("panelUpdateBanner");
+      if (!banner) return;
+      const available = !!(info && info.update_available);
+      const remote = String((info && (info.remote_full || info.remote)) || "");
+      if (remote) banner.dataset.remote = remote;
+      if (!available || currentUser.role !== "admin") {
+        banner.classList.add("hidden");
+        document.body.classList.remove("has-update-banner");
+        return;
+      }
+      if (panelUpdateDismissed && panelUpdateDismissed === remote) {
+        banner.classList.add("hidden");
+        document.body.classList.remove("has-update-banner");
+        return;
+      }
+      const detail = $("panelUpdateDetail");
+      if (detail) {
+        const bits = [];
+        if (info.behind) bits.push(`${info.behind} commit${info.behind > 1 ? "s" : ""}`);
+        if (info.remote_subject) bits.push(info.remote_subject);
+        if (info.local && info.remote) bits.push(`${info.local} → ${info.remote}`);
+        detail.textContent = bits.join(" · ");
+      }
+      banner.classList.remove("hidden");
+      document.body.classList.add("has-update-banner");
+    }
+
+    async function checkPanelUpdate({ fetchRemote = true } = {}) {
+      if (currentUser.role !== "admin") {
+        renderPanelUpdateBanner(null);
+        return;
+      }
+      try {
+        const { res, data } = await api(`/api/admin/panel/update-check?fetch=${fetchRemote ? "1" : "0"}`);
+        if (res.ok && data.ok !== false) renderPanelUpdateBanner(data);
+      } catch (_) {}
+    }
+
+    function startPanelUpdatePolling() {
+      if (panelUpdateTimer) clearInterval(panelUpdateTimer);
+      panelUpdateTimer = null;
+      if (currentUser.role !== "admin") {
+        renderPanelUpdateBanner(null);
+        return;
+      }
+      checkPanelUpdate({ fetchRemote: true }).catch(() => {});
+      panelUpdateTimer = setInterval(() => {
+        checkPanelUpdate({ fetchRemote: true }).catch(() => {});
+      }, 60000);
+    }
+
+    $("btnPanelUpdateDismiss")?.addEventListener("click", () => {
+      panelUpdateDismissed = String($("panelUpdateBanner")?.dataset?.remote || "");
+      $("panelUpdateBanner")?.classList.add("hidden");
+      document.body.classList.remove("has-update-banner");
+    });
+
+    $("btnPanelUpdate")?.addEventListener("click", async () => {
+      const btn = $("btnPanelUpdate");
+      if (btn) btn.disabled = true;
+      try {
+        const ok = await openConfirm(
+          "Le panel va faire git pull puis redémarrer (~2 s). Recharge la page ensuite.",
+          { title: "Mettre à jour le panel", okText: "Mettre à jour →" }
+        );
+        if (!ok) return;
+        const { res, data } = await api("/api/admin/panel/update", { method: "POST" });
+        if (!res.ok || !data.ok) {
+          await openAlert(data.error || "Échec mise à jour", { title: "Erreur" });
+          return;
+        }
+        if (!data.updated) {
+          await openAlert(data.message || "Déjà à jour", { title: "Panel" });
+          renderPanelUpdateBanner(data);
+          return;
+        }
+        const detail = $("panelUpdateDetail");
+        if (detail) detail.textContent = "Redémarrage… recharge dans 3 s";
+        if (btn) btn.textContent = "Redémarrage…";
+        setTimeout(() => location.reload(), 3500);
+      } catch (e) {
+        await openAlert(String(e.message || e), { title: "Erreur" });
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Mettre à jour →";
+        }
+      }
+    });
+
     (async () => {
       const res = await fetch("/api/me");
       const data = await res.json();
       if (data.authed) {
         currentUser = { username: data.username || "", role: data.role || "user" };
+        if (data.panel_update) renderPanelUpdateBanner(data.panel_update);
+        startPanelUpdatePolling();
         await applyRoute();
       } else showLogin();
     })();

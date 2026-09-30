@@ -195,6 +195,7 @@ _NO_SERVER_PREFIXES = (
     "/api/logout",
     "/api/me",
     "/api/admin/users",
+    "/api/admin/panel",
     "/api/servers",
     "/api/password",
 )
@@ -751,12 +752,150 @@ async def me(request: Request):
     user = current_user(request)
     if not user:
         return {"ok": True, "authed": False}
-    return {
+    payload: dict[str, Any] = {
         "ok": True,
         "authed": True,
         "username": user["username"],
         "role": user["role"],
     }
+    if user.get("role") == "admin":
+        try:
+            payload["panel_update"] = panel_update_status(fetch=False)
+        except Exception:
+            payload["panel_update"] = {"ok": False, "update_available": False}
+    return payload
+
+
+_panel_update_cache: dict[str, Any] = {"ts": 0.0, "data": None}
+PANEL_UPDATE_CACHE_TTL = 45.0
+
+
+def _git(*args: str, timeout: int = 60) -> tuple[int, str]:
+    proc = subprocess.run(
+        ["git", "-C", str(BASE), *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    out = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    return proc.returncode, out
+
+
+def panel_update_status(*, fetch: bool = True) -> dict[str, Any]:
+    """Compare HEAD local vs origin/main (fetch optionnel)."""
+    global _panel_update_cache
+    now = time.time()
+    if (
+        not fetch
+        and _panel_update_cache.get("data") is not None
+        and (now - float(_panel_update_cache.get("ts") or 0)) < PANEL_UPDATE_CACHE_TTL
+    ):
+        return dict(_panel_update_cache["data"])
+
+    if fetch:
+        # Ne bloque pas trop si GitHub est lent
+        _git("fetch", "--quiet", "origin", "main", timeout=45)
+
+    code_local, local = _git("rev-parse", "HEAD")
+    code_remote, remote = _git("rev-parse", "origin/main")
+    if code_local != 0 or code_remote != 0:
+        data = {
+            "ok": False,
+            "update_available": False,
+            "error": "git indisponible",
+            "local": (local or "")[:12],
+            "remote": (remote or "")[:12],
+        }
+        _panel_update_cache = {"ts": now, "data": data}
+        return data
+
+    local = local.strip()
+    remote = remote.strip()
+    behind = 0
+    ahead = 0
+    code_cnt, cnt = _git("rev-list", "--left-right", "--count", "HEAD...origin/main")
+    if code_cnt == 0 and cnt:
+        parts = cnt.split()
+        if len(parts) >= 2:
+            try:
+                ahead = int(parts[0])
+                behind = int(parts[1])
+            except ValueError:
+                pass
+
+    subject = ""
+    if behind > 0:
+        _, subject = _git("log", "-1", "--pretty=%s", "origin/main")
+
+    data = {
+        "ok": True,
+        "update_available": behind > 0,
+        "behind": behind,
+        "ahead": ahead,
+        "local": local[:12],
+        "remote": remote[:12],
+        "local_full": local,
+        "remote_full": remote,
+        "remote_subject": (subject or "").strip()[:120],
+    }
+    _panel_update_cache = {"ts": now, "data": data}
+    return data
+
+
+def schedule_panel_self_update() -> None:
+    """git pull + restart après réponse HTTP (process détaché)."""
+    script = (
+        "sleep 1; "
+        f"cd {BASE} && git pull --ff-only origin main; "
+        "systemctl restart gmod-panel"
+    )
+    subprocess.Popen(
+        ["/bin/bash", "-c", script],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+@app.get("/api/admin/panel/update-check")
+async def admin_panel_update_check(request: Request, fetch: int = 1):
+    deny = require_admin(request)
+    if deny:
+        return deny
+    try:
+        return {"ok": True, **panel_update_status(fetch=bool(fetch))}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e), "update_available": False}, status_code=500)
+
+
+@app.post("/api/admin/panel/update")
+async def admin_panel_update(request: Request):
+    deny = require_admin(request)
+    if deny:
+        return deny
+    try:
+        status = panel_update_status(fetch=True)
+        if not status.get("update_available"):
+            return {
+                "ok": True,
+                "updated": False,
+                "message": "Déjà à jour",
+                **status,
+            }
+        schedule_panel_self_update()
+        pelican.log_activity(
+            "panel.update",
+            f"{status.get('local')} → {status.get('remote')} ({status.get('remote_subject') or '…'})",
+            True,
+        )
+        return {
+            "ok": True,
+            "updated": True,
+            "message": "Mise à jour lancée — le panel redémarre dans ~2 s. Recharge la page.",
+            **status,
+        }
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 @app.get("/api/servers")
