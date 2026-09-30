@@ -210,6 +210,8 @@ async def bind_server_context(request: Request, call_next):
             ctx = srv.get_server_by_id(sid)
         except KeyError:
             return JSONResponse({"ok": False, "error": "serveur inconnu"}, status_code=404)
+        except RuntimeError as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
         except Exception as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
         user = current_user(request)
@@ -575,15 +577,20 @@ def server_status(*, force_rcon: bool = False) -> dict:
     return info
 
 
-# Ensure config + start script exist at boot (serveur par défaut)
-_boot = srv.set_current(srv.get_server_by_id(None))
+# Ensure config + start script exist at boot (si un serveur existe déjà)
 try:
-    if not S().config_file.exists():
-        save_config(load_config())
-    else:
-        write_start_script(load_config())
-finally:
-    srv.reset_current(_boot)
+    _boot_servers = srv.list_servers()
+    if _boot_servers:
+        _boot = srv.set_current(_boot_servers[0])
+        try:
+            if not S().config_file.exists():
+                save_config(load_config())
+            else:
+                write_start_script(load_config())
+        finally:
+            srv.reset_current(_boot)
+except Exception:
+    pass
 
 
 def _spa_index() -> HTMLResponse:

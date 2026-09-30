@@ -2180,7 +2180,10 @@
       if (!grid) return;
       const servers = serversCache || [];
       if (!servers.length) {
-        grid.innerHTML = `<div class="dash-empty">Aucun serveur pour le moment.</div>`;
+        const hint = currentUser.role === "admin"
+          ? `Aucun serveur. Va dans <b>Admin → Server</b> pour en créer un.`
+          : `Aucun serveur assigné. Demande à un admin.`;
+        grid.innerHTML = `<div class="dash-empty">${hint}</div>`;
         return;
       }
       grid.innerHTML = servers.map((s) => {

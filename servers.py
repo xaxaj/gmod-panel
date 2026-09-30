@@ -153,25 +153,33 @@ def get_server_by_id(server_id: Optional[str]) -> ServerCtx:
 
 
 def ensure_migrated() -> None:
-    """Crée servers.json + data/<id>/ depuis l'ancien mono-serveur."""
-    if load_registry():
-        # assure data dirs
-        for r in load_registry():
+    """Initialise servers.json. Ne crée un serveur auto QUE si une install GMod existe déjà."""
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    rows = load_registry()
+    if rows:
+        for r in rows:
             (DATA_ROOT / r["id"]).mkdir(parents=True, exist_ok=True)
             ctx = row_to_ctx(r)
             if not ctx.config_file.exists() and LEGACY_CONFIG.exists() and r["id"] == "main":
                 shutil.copy2(LEGACY_CONFIG, ctx.config_file)
         return
 
+    # Fresh install : registre vide — pas de serveur fantôme
     gmod = _default_gmod()
+    has_game = (gmod / "srcds_run_x64").exists() or (gmod / "srcds_linux").exists()
+    if not has_game:
+        if not SERVERS_FILE.exists():
+            save_registry([])
+        return
+
     row = {
         "id": "main",
         "name": "Serveur principal",
         "gmod_dir": str(gmod),
         "unit": "gmod",
+        "owner": "",
         "created_at": int(time.time()),
     }
-    DATA_ROOT.mkdir(parents=True, exist_ok=True)
     (DATA_ROOT / "main").mkdir(parents=True, exist_ok=True)
     cfg_path = DATA_ROOT / "main" / "server-config.json"
     if LEGACY_CONFIG.exists() and not cfg_path.exists():
