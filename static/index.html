@@ -2136,7 +2136,11 @@
       if (stop) stop.disabled = busy || !running;
       if (restart) restart.disabled = busy || !running || !lastGameInstalled;
       if (kill) kill.disabled = busy || !running;
-      if (installBtn) installBtn.disabled = busy || lastGameInstalled || installing;
+      if (installBtn) {
+        const showInstall = !lastGameInstalled;
+        installBtn.hidden = !showInstall;
+        installBtn.disabled = busy || !showInstall || installing;
+      }
     }
 
     function feedInstallLogs(job) {
