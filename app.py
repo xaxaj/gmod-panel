@@ -295,13 +295,19 @@ def shell_quote(value: str) -> str:
 
 
 def write_start_script(cfg: dict[str, Any]) -> None:
+    port = max(1, min(65535, int(cfg["port"])))
+    # SourceTV / clientport par défaut (27020 / 27005) → conflit dès 2 serveurs
+    tv_port = min(65535, port + 20000)
+    client_port = min(65535, port + 10000)
     args = [
         "./srcds_run_x64",
         "-game garrysmod",
         "-console",
         "-usercon",
         "-ip 0.0.0.0",
-        f"-port {int(cfg['port'])}",
+        f"-port {port}",
+        f"+tv_port {tv_port}",
+        f"+clientport {client_port}",
         f"-tickrate {int(cfg['tickrate'])}",
         f"+maxplayers {int(cfg['maxplayers'])}",
         f"+gamemode {cfg['gamemode'] or 'sandbox'}",
