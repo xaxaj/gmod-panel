@@ -53,9 +53,18 @@ else
   echo "==> .env déjà présent — conservé"
 fi
 
+echo "==> Utilisateur système steam (requis pour les serveurs GMod)"
+if ! id steam &>/dev/null; then
+  useradd --system --create-home --home-dir /home/steam --shell /usr/sbin/nologin steam
+  echo "    utilisateur steam créé"
+else
+  echo "    steam déjà présent"
+fi
+mkdir -p /home/steam/servers
+chown -R steam:steam /home/steam 2>/dev/null || true
+
 mkdir -p "$(dirname "$GMOD_DIR")"
-# Ne crée pas le serveur GMod ici : le panel attend GMOD_DIR existant
-# (SteamCMD / start.sh / garrysmod/). Voir README.
+# Ne crée pas le serveur GMod ici : ajoute-le via Admin → Server dans le panel.
 
 if [[ -f systemd/gmod-panel.service ]]; then
   sed "s|/opt/gmod-panel|${PANEL_DIR}|g" systemd/gmod-panel.service \

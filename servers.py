@@ -203,7 +203,47 @@ def current() -> ServerCtx:
     return ctx
 
 
+def ensure_steam_user() -> None:
+    """Crée l'utilisateur système steam si absent (requis par les unités systemd)."""
+    import pwd
+
+    try:
+        pwd.getpwnam("steam")
+    except KeyError:
+        proc = subprocess.run(
+            [
+                "useradd",
+                "--system",
+                "--create-home",
+                "--home-dir",
+                "/home/steam",
+                "--shell",
+                "/usr/sbin/nologin",
+                "steam",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        try:
+            pwd.getpwnam("steam")
+        except KeyError as e:
+            detail = (proc.stderr or proc.stdout or "").strip()
+            raise RuntimeError(
+                f"utilisateur système 'steam' introuvable et impossible à créer: {detail or proc.returncode}"
+            ) from e
+
+    steam = pwd.getpwnam("steam")
+    for path in (Path("/home/steam"), SERVERS_ROOT):
+        path.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chown(path, steam.pw_uid, steam.pw_gid)
+        except OSError:
+            pass
+
+
 def write_systemd_unit(ctx: ServerCtx) -> Path:
+    ensure_steam_user()
     unit_path = Path(f"/etc/systemd/system/{ctx.unit}.service")
     body = f"""[Unit]
 Description=Garry's Mod DS ({ctx.name})
@@ -321,6 +361,7 @@ def create_server(
     name = (name or sid).strip()[:64] or sid
     owner = (owner or "").strip()
     # Convention fixe : /home/steam/servers/<id>
+    ensure_steam_user()
     SERVERS_ROOT.mkdir(parents=True, exist_ok=True)
     gdir = SERVERS_ROOT / sid
     unit = (unit or f"gmod-{sid}").strip()
