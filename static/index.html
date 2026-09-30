@@ -2139,6 +2139,7 @@
       if (kill) kill.disabled = busy || !running;
       if (installBtn) {
         const showInstall = !lastGameInstalled;
+        installBtn.classList.toggle("hidden", !showInstall);
         installBtn.hidden = !showInstall;
         installBtn.disabled = busy || !showInstall || installing;
       }
