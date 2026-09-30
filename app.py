@@ -927,6 +927,39 @@ async def admin_delete_user(request: Request, username: str):
     return {"ok": True, "message": f"Compte {username} supprimé"}
 
 
+@app.patch("/api/admin/users/{username}")
+async def admin_patch_user(request: Request, username: str):
+    deny = require_admin(request)
+    if deny:
+        return deny
+    me = current_user(request)
+    assert me
+    body = await request.json()
+    role = str(body.get("role") or "").strip().lower()
+    if role not in ROLES:
+        return JSONResponse({"ok": False, "error": "rôle invalide (admin|user)"}, status_code=400)
+    users = load_users()
+    target = next((u for u in users if str(u.get("username", "")).lower() == username.lower()), None)
+    if not target:
+        return JSONResponse({"ok": False, "error": "introuvable"}, status_code=404)
+    old_role = str(target.get("role") or "user")
+    if old_role == role:
+        return {"ok": True, "message": f"{username} est déjà {role}", "username": username, "role": role}
+    admins = [u for u in users if u.get("role") == "admin"]
+    # Empêcher de rétrograder le dernier admin (y compris soi-même)
+    if old_role == "admin" and role != "admin" and len(admins) <= 1:
+        return JSONResponse({"ok": False, "error": "il doit rester au moins 1 admin"}, status_code=400)
+    target["role"] = role
+    save_users(users)
+    pelican.log_activity("admin", f"rôle {username} : {old_role} → {role}")
+    return {
+        "ok": True,
+        "message": f"Rôle de {username} : {old_role} → {role}",
+        "username": username,
+        "role": role,
+    }
+
+
 @app.post("/api/admin/users/{username}/password")
 async def admin_reset_password(request: Request, username: str):
     deny = require_admin(request)

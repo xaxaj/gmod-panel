@@ -3469,6 +3469,7 @@
               <td><strong>${escapeHtml(u.username)}</strong>${me ? ' <span class="sp-mono">(toi)</span>' : ""}</td>
               <td><span class="sp-pill role-${escapeHtml(role)}">${escapeHtml(role)}</span></td>
               <td><div class="sp-actions-cell">
+                <button class="sp-link" type="button" data-role="${escapeHtml(u.username)}" data-role-cur="${escapeHtml(role)}">Changer rôle</button>
                 <button class="sp-link" type="button" data-reset="${escapeHtml(u.username)}">Reset MDP</button>
                 <button class="sp-link danger" type="button" data-del="${escapeHtml(u.username)}" ${me ? "disabled" : ""}>Supprimer</button>
               </div></td>
@@ -3476,6 +3477,41 @@
           }).join("")}
         </tbody>
       </table>`;
+      list.querySelectorAll("[data-role]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const uname = btn.dataset.role;
+          const cur = btn.dataset.roleCur || "user";
+          const picked = await openSelect({
+            title: "Changer le rôle",
+            hint: `Compte : ${uname}`,
+            label: "Rôle",
+            options: [
+              { value: "user", label: "user — accès à ses serveurs" },
+              { value: "admin", label: "admin — panel complet" },
+            ],
+            value: cur,
+            okText: "Enregistrer →",
+          });
+          if (picked == null) return;
+          const role = String(picked).trim();
+          if (!role || role === cur) return;
+          const toast = $("adminToast");
+          const { res, data } = await api(`/api/admin/users/${encodeURIComponent(uname)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ role }),
+          });
+          toast.className = res.ok && data.ok ? "toast" : "toast err";
+          toast.textContent = data.message || data.error || "…";
+          if (res.ok && data.ok) {
+            if (uname === currentUser.username) {
+              currentUser.role = role;
+              fillAdminUserChip();
+            }
+            refreshAdminUsers().catch(() => {});
+          }
+        });
+      });
       list.querySelectorAll("[data-del]").forEach((btn) => {
         btn.addEventListener("click", async () => {
           if (!await openConfirm(`Supprimer ${btn.dataset.del} ?`, { title: "Supprimer compte", okText: "Supprimer →", danger: true })) return;
