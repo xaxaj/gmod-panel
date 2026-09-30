@@ -352,6 +352,38 @@ def install_gmod(
     return "installé via SteamCMD"
 
 
+def server_stored_port(server_id: str, default: int = 27015) -> int:
+    cfg_path = DATA_ROOT / server_id / "server-config.json"
+    try:
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        return int(data.get("port") or default)
+    except Exception:
+        return int(default)
+
+
+def used_ports() -> set[int]:
+    ports: set[int] = set()
+    for r in load_registry():
+        ports.add(server_stored_port(str(r["id"])))
+    return ports
+
+
+def suggest_port(preferred: int = 27015) -> int:
+    """Prochain port libre (à partir de preferred)."""
+    try:
+        p = int(preferred)
+    except Exception:
+        p = 27015
+    if p < 1024 or p > 65535:
+        p = 27015
+    used = used_ports()
+    while p in used and p < 65535:
+        p += 1
+    if p in used:
+        raise ValueError("aucun port libre")
+    return p
+
+
 def create_server(
     *,
     server_id: str,

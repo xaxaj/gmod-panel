@@ -727,7 +727,7 @@ async def servers_list(request: Request):
             )
         finally:
             srv.reset_current(token)
-    return {"ok": True, "servers": rows}
+    return {"ok": True, "servers": rows, "next_port": srv.suggest_port(27015)}
 
 
 @app.post("/api/servers")
@@ -744,9 +744,16 @@ async def servers_create(request: Request):
     if owner and not find_user(owner):
         return JSONResponse({"ok": False, "error": "utilisateur inconnu"}, status_code=400)
     try:
-        port = int(body.get("port") or 27015)
+        requested = int(body.get("port") or 27015)
     except Exception:
-        port = 27015
+        requested = 27015
+    try:
+        port = srv.suggest_port(requested)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    port_note = ""
+    if port != requested:
+        port_note = f" (port {requested} pris → {port})"
     try:
         ctx = srv.create_server(
             server_id=sid,
@@ -775,12 +782,13 @@ async def servers_create(request: Request):
                 install_note = f" — install: {job.get('detail') or 'erreur'}"
         finally:
             srv.reset_current(token)
-        pelican.log_activity("server.create", f"{ctx.id} owner={ctx.owner or '-'}", True)
+        pelican.log_activity("server.create", f"{ctx.id} port={port} owner={ctx.owner or '-'}", True)
         return {
             "ok": True,
-            "server": ctx.to_public(),
+            "server": {**ctx.to_public(), "port": port},
+            "port": port,
             "install": pelican.get_install_job(ctx.id),
-            "message": f"Serveur {ctx.id} créé{install_note}",
+            "message": f"Serveur {ctx.id} créé sur :{port}{port_note}{install_note}",
         }
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)

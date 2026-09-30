@@ -2211,6 +2211,12 @@
       serversCache = data.servers || [];
       renderDashServers();
       updateActiveServerLabel();
+      if (typeof data.next_port === "number") {
+        const portInput = document.querySelector("#adminServerForm [name=port]");
+        if (portInput && !portInput.matches(":focus")) {
+          portInput.value = String(data.next_port);
+        }
+      }
     }
 
     function updateActiveServerLabel() {
@@ -3762,9 +3768,9 @@
         }
         toast.textContent = data.message || "OK";
         form.reset();
-        form.elements.namedItem("port").value = "27016";
         if ($("newServerPath")) $("newServerPath").value = "/home/steam/servers/…";
         await loadServers();
+        // loadServers remplit déjà next_port
         refreshAdminServers().catch(() => {});
       } catch (err) {
         toast.className = "toast err";
