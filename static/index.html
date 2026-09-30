@@ -3280,6 +3280,17 @@
         left.innerHTML = `<strong style="color:var(--navy)">${b.name}</strong><div style="color:var(--muted);font-size:.8rem;margin-top:4px">${fmtBytes(b.size)} · ${new Date((b.mtime || 0) * 1000).toLocaleString()}</div>`;
         const actions = document.createElement("div");
         actions.className = "actions";
+        const dl = document.createElement("button");
+        dl.className = "btn";
+        dl.type = "button";
+        dl.textContent = "Télécharger";
+        dl.onclick = () => {
+          const q = new URLSearchParams({
+            name: b.name,
+            server_id: currentServerId || "",
+          });
+          window.open("/api/backups/download?" + q.toString(), "_blank");
+        };
         const restore = document.createElement("button");
         restore.className = "btn";
         restore.type = "button";
@@ -3311,6 +3322,7 @@
           });
           await refreshBackups();
         };
+        actions.appendChild(dl);
         actions.appendChild(restore);
         actions.appendChild(del);
         row.appendChild(left);

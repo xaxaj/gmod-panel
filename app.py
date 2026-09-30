@@ -1233,6 +1233,27 @@ async def backups_delete(request: Request):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
 
 
+@app.get("/api/backups/download")
+async def backups_download(request: Request, name: str = ""):
+    deny = require_auth(request)
+    if deny:
+        return deny
+    safe = Path(str(name or "")).name
+    if not safe.endswith(".tar.gz") or ".." in safe:
+        return JSONResponse({"ok": False, "error": "nom invalide"}, status_code=400)
+    target = (S().backup_dir / safe).resolve()
+    root = S().backup_dir.resolve()
+    if target != root and root not in target.parents:
+        return JSONResponse({"ok": False, "error": "chemin hors zone"}, status_code=403)
+    if not target.exists() or not target.is_file():
+        return JSONResponse({"ok": False, "error": "backup introuvable"}, status_code=404)
+    return FileResponse(
+        path=str(target),
+        filename=target.name,
+        media_type="application/gzip",
+    )
+
+
 @app.post("/api/backups/restore")
 async def backups_restore(request: Request):
     deny = require_auth(request)
