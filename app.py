@@ -491,7 +491,19 @@ def valid_session(cookie: Optional[str]) -> bool:
 
 
 def current_user(request: Request) -> Optional[dict[str, Any]]:
-    return parse_session(request.cookies.get(COOKIE_NAME))
+    sess = parse_session(request.cookies.get(COOKIE_NAME))
+    if not sess:
+        return None
+    # Rôle toujours relu en base (sinon un changement admin reste invisible jusqu'au re-login)
+    db = find_user(str(sess.get("username") or ""))
+    if not db:
+        return None
+    role = db.get("role") if db.get("role") in ROLES else "user"
+    return {
+        "username": str(db.get("username") or sess["username"]),
+        "role": str(role),
+        "ts": sess.get("ts"),
+    }
 
 
 def is_authed(request: Request) -> bool:
