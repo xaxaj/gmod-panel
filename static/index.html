@@ -2223,7 +2223,42 @@
       }
     }
 
+    let serverViewGen = 0;
+
+    function resetServerViewUI() {
+      lastRunning = false;
+      lastGameInstalled = false;
+      lastInstallLogLen = 0;
+      connectStr = "";
+      powerBusy = false;
+      ensureInstallPolling(false);
+      const badge = $("statusBadge");
+      if (badge) badge.className = "status-badge off";
+      if ($("stateLabel")) $("stateLabel").textContent = "…";
+      ["mState", "mHost", "mMap", "mUptime", "mConnect"].forEach((id) => {
+        if ($(id)) $(id).textContent = "—";
+      });
+      if ($("connectText")) $("connectText").textContent = "…";
+      if ($("playersChipCount")) $("playersChipCount").textContent = "0 joueurs";
+      if ($("playersChip")) $("playersChip").classList.add("off");
+      if ($("powerHint")) {
+        $("powerHint").textContent = "Chargement…";
+        $("powerHint").title = "";
+      }
+      if ($("btnSteam")) $("btnSteam").removeAttribute("href");
+      if ($("wsState")) $("wsState").textContent = "WS …";
+      const form = $("cfgForm");
+      if (form) {
+        [...form.elements].forEach((el) => {
+          if (el.name) el.value = "";
+        });
+      }
+      syncPowerButtons();
+      updateActiveServerLabel();
+    }
+
     function renderStatus(s) {
+      if (s && s.server && s.server.id && s.server.id !== currentServerId) return;
       const running = !!s.running;
       lastRunning = running;
       lastGameInstalled = !!s.game_installed;
@@ -2373,11 +2408,15 @@
 
     async function switchServer(id) {
       if (!id) return;
+      const switched = currentServerId !== id;
       currentServerId = id;
       try { localStorage.setItem("x_panel_server", id); } catch (_) {}
+      if (switched) {
+        serverViewGen += 1;
+        resetServerViewUI();
+        clearConsole();
+      }
       updateActiveServerLabel();
-      if (consoleEl) consoleEl.innerHTML = "";
-      clearConsole();
       appendLog(`> SERVEUR → ${id}`, "log-cmd");
       connectWs();
       await Promise.all([
@@ -2421,7 +2460,11 @@
       filesPath = "";
       filesParent = "";
       filesSelected = "";
-      if (switched) clearConsole();
+      if (switched) {
+        serverViewGen += 1;
+        resetServerViewUI();
+        clearConsole();
+      }
       try { localStorage.setItem("x_panel_server", id); } catch (_) {}
       if (!skipRoute) setRoute(`/servers/${encodeURIComponent(id)}`, { replace });
       showApp({ forceStatus: true });
@@ -2448,7 +2491,10 @@
     }
 
     async function refreshStatus() {
+      const gen = serverViewGen;
+      const sid = currentServerId;
       const { data } = await api("/api/status");
+      if (gen !== serverViewGen || sid !== currentServerId) return;
       if (data.ok !== false) renderStatus(data);
     }
 
@@ -2480,7 +2526,10 @@
     }
 
     async function loadConfig() {
+      const gen = serverViewGen;
+      const sid = currentServerId;
       const { data } = await api("/api/config");
+      if (gen !== serverViewGen || sid !== currentServerId) return;
       if (data.config) fillConfig(data.config);
       if (data.connect) {
         connectStr = data.connect;
