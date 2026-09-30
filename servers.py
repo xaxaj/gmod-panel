@@ -248,6 +248,8 @@ def write_systemd_unit(ctx: ServerCtx) -> Path:
     body = f"""[Unit]
 Description=Garry's Mod DS ({ctx.name})
 After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -257,8 +259,6 @@ WorkingDirectory={ctx.gmod_dir}
 ExecStart={ctx.start_sh}
 Restart=on-failure
 RestartSec=8
-StartLimitIntervalSec=120
-StartLimitBurst=3
 LimitNOFILE=100000
 
 [Install]
