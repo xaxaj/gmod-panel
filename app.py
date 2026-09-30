@@ -21,18 +21,12 @@ from fastapi.staticfiles import StaticFiles
 
 from rcon import RconError, SourceRcon
 import pelican_ext as pelican
+import servers as srv
 
 BASE = Path(__file__).resolve().parent
 ENV_FILE = BASE / ".env"
-CONFIG_FILE = BASE / "server-config.json"
 USERS_FILE = BASE / "users.json"
-GMOD_DIR = Path(os.environ.get("GMOD_DIR") or "/home/steam/gmod")
-START_SH = GMOD_DIR / "start.sh"
-SERVER_CFG = GMOD_DIR / "garrysmod" / "cfg" / "server.cfg"
-RCON_FILE = GMOD_DIR / "rcon_password.txt"
-PLAYERS_JSON = GMOD_DIR / "garrysmod" / "data" / "cloudix_panel" / "players.json"
-RANKS_JSON = GMOD_DIR / "garrysmod" / "data" / "cloudix_panel" / "ranks.json"
-FILES_ROOT = GMOD_DIR
+# Chemins serveur : via srv.current() (multi-instances)
 FILES_MAX_READ = 512 * 1024
 FILES_MAX_UPLOAD = 512 * 1024 * 1024  # 512 Mo
 FILES_SECRET_NAMES = {
@@ -46,6 +40,15 @@ ARCHIVE_EXTS = (".rar", ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".gz")
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_-]{3,32}$")
 ROLES = ("admin", "user")
 PBKDF2_ITERS = 200_000
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b.")
+# Codes couleurs orphelins (ESC déjà mangé) : [39m [38;2;…]m
+ANSI_ORPHAN_RE = re.compile(r"\[[0-9;]*m")
+
+
+def strip_ansi(text: str) -> str:
+    text = ANSI_RE.sub("", text or "")
+    text = ANSI_ORPHAN_RE.sub("", text)
+    return text
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "hostname": "GMod Server",
@@ -83,16 +86,6 @@ def load_env() -> dict[str, str]:
 
 
 ENV = load_env()
-# Recharge GMOD_DIR depuis .env si défini
-if ENV.get("GMOD_DIR"):
-    GMOD_DIR = Path(ENV["GMOD_DIR"])
-    START_SH = GMOD_DIR / "start.sh"
-    SERVER_CFG = GMOD_DIR / "garrysmod" / "cfg" / "server.cfg"
-    RCON_FILE = GMOD_DIR / "rcon_password.txt"
-    PLAYERS_JSON = GMOD_DIR / "garrysmod" / "data" / "cloudix_panel" / "players.json"
-    RANKS_JSON = GMOD_DIR / "garrysmod" / "data" / "cloudix_panel" / "ranks.json"
-    FILES_ROOT = GMOD_DIR
-
 PANEL_PASSWORD = ENV.get("PANEL_PASSWORD", "change-me")
 SESSION_SECRET = ENV.get("SESSION_SECRET", secrets.token_hex(24)).encode()
 RCON_HOST = ENV.get("RCON_HOST", "127.0.0.1")
@@ -186,9 +179,48 @@ def set_panel_password(new_password: str) -> None:
 
 
 ensure_users_bootstrap()
+srv.ensure_migrated()
+
+
+def S() -> srv.ServerCtx:
+    return srv.current()
+
 
 app = FastAPI(docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
+
+# Routes qui n'ont pas besoin d'un serveur sélectionné
+_NO_SERVER_PREFIXES = (
+    "/api/login",
+    "/api/logout",
+    "/api/me",
+    "/api/admin/users",
+    "/api/servers",
+    "/api/password",
+)
+
+
+@app.middleware("http")
+async def bind_server_context(request: Request, call_next):
+    path = request.url.path
+    token = None
+    if path.startswith("/api/") and not any(path == p or path.startswith(p + "/") for p in _NO_SERVER_PREFIXES):
+        sid = request.headers.get("X-Server-Id") or request.query_params.get("server_id")
+        try:
+            ctx = srv.get_server_by_id(sid)
+        except KeyError:
+            return JSONResponse({"ok": False, "error": "serveur inconnu"}, status_code=404)
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+        user = current_user(request)
+        if user and not srv.user_can_access(ctx, str(user.get("username") or ""), str(user.get("role") or "user")):
+            return JSONResponse({"ok": False, "error": "accès refusé à ce serveur"}, status_code=403)
+        token = srv.set_current(ctx)
+    try:
+        return await call_next(request)
+    finally:
+        if token is not None:
+            srv.reset_current(token)
 
 
 def detect_public_ip() -> str:
@@ -218,16 +250,16 @@ PUBLIC_IP = detect_public_ip()
 
 def load_config() -> dict[str, Any]:
     cfg = dict(DEFAULT_CONFIG)
-    if CONFIG_FILE.exists():
+    if S().config_file.exists():
         try:
-            saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            saved = json.loads(S().config_file.read_text(encoding="utf-8"))
             if isinstance(saved, dict):
                 cfg.update({k: saved[k] for k in DEFAULT_CONFIG if k in saved})
         except Exception:
             pass
     if not cfg.get("rcon_password"):
-        if RCON_FILE.exists():
-            cfg["rcon_password"] = RCON_FILE.read_text().strip()
+        if S().rcon_file.exists():
+            cfg["rcon_password"] = S().rcon_file.read_text().strip()
         else:
             cfg["rcon_password"] = ENV.get("RCON_PASSWORD", secrets.token_hex(12))
     # normalize types
@@ -292,18 +324,18 @@ def write_start_script(cfg: dict[str, Any]) -> None:
     if extra:
         args.append(extra)
 
-    body = "#!/bin/bash\ncd /home/steam/gmod\nexec \\\n"
+    body = f"#!/bin/bash\ncd {S().gmod_dir}\nexec \\\n"
     body += "  \\\n".join(f"  {a}" for a in args)
     body += ' \\\n  "$@"\n'
-    START_SH.write_text(body, encoding="utf-8")
-    START_SH.chmod(0o755)
+    S().start_sh.write_text(body, encoding="utf-8")
+    S().start_sh.chmod(0o755)
     # ownership
     try:
         import pwd
 
         steam = pwd.getpwnam("steam")
         os_chown = getattr(__import__("os"), "chown")
-        os_chown(START_SH, steam.pw_uid, steam.pw_gid)
+        os_chown(S().start_sh, steam.pw_uid, steam.pw_gid)
     except Exception:
         pass
 
@@ -340,17 +372,17 @@ sbox_maxvehicles 6
 log on
 sv_logfile 1
 '''
-    SERVER_CFG.parent.mkdir(parents=True, exist_ok=True)
-    SERVER_CFG.write_text(content, encoding="utf-8")
-    RCON_FILE.write_text(rcon + "\n", encoding="utf-8")
+    S().server_cfg.parent.mkdir(parents=True, exist_ok=True)
+    S().server_cfg.write_text(content, encoding="utf-8")
+    S().rcon_file.write_text(rcon + "\n", encoding="utf-8")
     try:
         import pwd
 
         steam = pwd.getpwnam("steam")
         os_chown = getattr(__import__("os"), "chown")
-        os_chown(SERVER_CFG, steam.pw_uid, steam.pw_gid)
-        os_chown(RCON_FILE, steam.pw_uid, steam.pw_gid)
-        RCON_FILE.chmod(0o600)
+        os_chown(S().server_cfg, steam.pw_uid, steam.pw_gid)
+        os_chown(S().rcon_file, steam.pw_uid, steam.pw_gid)
+        S().rcon_file.chmod(0o600)
     except Exception:
         pass
 
@@ -388,7 +420,7 @@ def save_config(cfg: dict[str, Any]) -> dict[str, Any]:
     if not merged["map"]:
         merged["map"] = "gm_construct"
 
-    CONFIG_FILE.write_text(json.dumps(merged, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    S().config_file.write_text(json.dumps(merged, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     write_start_script(merged)
     write_server_cfg(merged)
 
@@ -484,9 +516,13 @@ def run_systemctl(*args: str) -> tuple[int, str]:
     return proc.returncode, out.strip()
 
 
-def server_status() -> dict:
+_status_rcon_cache: dict[str, tuple[float, dict]] = {}
+STATUS_RCON_TTL = 15.0
+
+
+def server_status(*, force_rcon: bool = False) -> dict:
     cfg = load_config()
-    code, active = run_systemctl("is-active", "gmod")
+    code, active = run_systemctl("is-active", S().unit)
     state = active.strip() if active else "unknown"
     running = state == "active"
     connect_ip = PUBLIC_IP
@@ -502,38 +538,82 @@ def server_status() -> dict:
         "connect_port": connect_port,
         "connect": f"{connect_ip}:{connect_port}",
         "steam_connect": f"steam://connect/{connect_ip}:{connect_port}",
+        "server": S().to_public(),
     }
     if running and rcon_password():
-        try:
-            rcon = SourceRcon(RCON_HOST, connect_port, rcon_password(), timeout=3.0)
-            status = rcon.command("status")
-            for line in status.splitlines():
-                low = line.lower().strip()
-                if low.startswith("hostname:"):
-                    info["hostname"] = line.split(":", 1)[1].strip()
-                elif low.startswith("map"):
-                    info["map"] = line.split(":", 1)[1].strip() if ":" in line else line
-                elif "players" in low and ":" in line:
-                    info["players"] = line.split(":", 1)[1].strip()
-        except Exception:
-            pass
+        sid = S().id
+        now = time.time()
+        cached = _status_rcon_cache.get(sid)
+        if not force_rcon and cached and (now - cached[0]) < STATUS_RCON_TTL:
+            for k, v in cached[1].items():
+                if v is not None:
+                    info[k] = v
+        else:
+            try:
+                rcon = SourceRcon(RCON_HOST, connect_port, rcon_password(), timeout=3.0)
+                status = rcon.command("status")
+                parsed = {"hostname": None, "map": None, "players": None}
+                for line in status.splitlines():
+                    low = line.lower().strip()
+                    if low.startswith("hostname:"):
+                        parsed["hostname"] = line.split(":", 1)[1].strip()
+                    elif low.startswith("map"):
+                        parsed["map"] = line.split(":", 1)[1].strip() if ":" in line else line
+                    elif "players" in low and ":" in line:
+                        parsed["players"] = line.split(":", 1)[1].strip()
+                _status_rcon_cache[sid] = (now, parsed)
+                for k, v in parsed.items():
+                    if v is not None:
+                        info[k] = v
+            except Exception:
+                pass
+    else:
+        _status_rcon_cache.pop(S().id, None)
     if not info.get("map"):
         info["map"] = cfg.get("map")
     return info
 
 
-# Ensure config + start script exist at boot
-if not CONFIG_FILE.exists():
-    save_config(load_config())
-else:
-    # keep start.sh aligned
-    write_start_script(load_config())
+# Ensure config + start script exist at boot (serveur par défaut)
+_boot = srv.set_current(srv.get_server_by_id(None))
+try:
+    if not S().config_file.exists():
+        save_config(load_config())
+    else:
+        write_start_script(load_config())
+finally:
+    srv.reset_current(_boot)
+
+
+def _spa_index() -> HTMLResponse:
+    html = (BASE / "static" / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(html)
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    html = (BASE / "static" / "index.html").read_text(encoding="utf-8")
-    return HTMLResponse(html)
+    return _spa_index()
+
+
+@app.get("/servers/{server_id}", response_class=HTMLResponse)
+async def spa_server(server_id: str):
+    """SPA : refresh / lien direct vers un serveur."""
+    return _spa_index()
+
+
+@app.get("/admin", response_class=HTMLResponse)
+async def spa_admin():
+    return _spa_index()
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+async def spa_admin_users():
+    return _spa_index()
+
+
+@app.get("/admin/servers", response_class=HTMLResponse)
+async def spa_admin_servers():
+    return _spa_index()
 
 
 @app.post("/api/login")
@@ -608,6 +688,144 @@ async def me(request: Request):
         "username": user["username"],
         "role": user["role"],
     }
+
+
+@app.get("/api/servers")
+async def servers_list(request: Request):
+    deny = require_auth(request)
+    if deny:
+        return deny
+    user = current_user(request) or {}
+    rows = []
+    for s in srv.list_servers_for(str(user.get("username") or ""), str(user.get("role") or "user")):
+        token = srv.set_current(s)
+        try:
+            code, active = run_systemctl("is-active", s.unit)
+            state = (active or "unknown").strip()
+            cfg = load_config()
+            rows.append(
+                {
+                    **s.to_public(),
+                    "state": state,
+                    "running": state == "active",
+                    "port": int(cfg.get("port") or 27015),
+                    "hostname": cfg.get("hostname") or s.name,
+                    "map": cfg.get("map") or "",
+                }
+            )
+        finally:
+            srv.reset_current(token)
+    return {"ok": True, "servers": rows}
+
+
+@app.post("/api/servers")
+async def servers_create(request: Request):
+    deny = require_admin(request)
+    if deny:
+        return deny
+    body = await request.json()
+    sid = str(body.get("id") or "").strip().lower()
+    name = str(body.get("name") or "").strip()
+    gmod_dir = str(body.get("gmod_dir") or "").strip()
+    unit = str(body.get("unit") or "").strip()
+    owner = str(body.get("owner") or "").strip()
+    if owner and not find_user(owner):
+        return JSONResponse({"ok": False, "error": "utilisateur inconnu"}, status_code=400)
+    try:
+        port = int(body.get("port") or 27015)
+    except Exception:
+        port = 27015
+    try:
+        ctx = srv.create_server(
+            server_id=sid,
+            name=name,
+            gmod_dir="",
+            unit=unit or f"gmod-{sid}",
+            port=port,
+            owner=owner,
+        )
+        token = srv.set_current(ctx)
+        install_note = ""
+        try:
+            cfg = dict(DEFAULT_CONFIG)
+            cfg["port"] = port
+            cfg["hostname"] = name or sid
+            save_config(cfg)
+            # Installe GMod (clone depuis un serveur existant, sinon SteamCMD)
+            if not (ctx.gmod_dir / "srcds_run_x64").exists() and not (ctx.gmod_dir / "srcds_linux").exists():
+                try:
+                    how = srv.install_gmod(ctx.gmod_dir)
+                    write_start_script(cfg)
+                    write_server_cfg(cfg)
+                    install_note = f" + {how}"
+                except Exception as ie:
+                    install_note = f" (install à lancer : {ie})"
+                    pelican.log_activity("server.install", str(ie), False)
+        finally:
+            srv.reset_current(token)
+        pelican.log_activity("server.create", f"{ctx.id} owner={ctx.owner or '-'}", True)
+        return {
+            "ok": True,
+            "server": ctx.to_public(),
+            "message": f"Serveur {ctx.id} créé{install_note}",
+        }
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.patch("/api/servers/{server_id}")
+async def servers_patch(request: Request, server_id: str):
+    deny = require_admin(request)
+    if deny:
+        return deny
+    body = await request.json()
+    name = body.get("name", None)
+    owner = body.get("owner", None)
+    if name is not None:
+        name = str(name).strip()
+    if owner is not None:
+        owner = str(owner).strip()
+        if owner and not find_user(owner):
+            return JSONResponse({"ok": False, "error": "utilisateur inconnu"}, status_code=400)
+    try:
+        if name is not None and owner is None:
+            ctx = srv.rename_server(server_id, name)
+        else:
+            ctx = srv.update_server(server_id, name=name, owner=owner)
+        pelican.log_activity("server.patch", f"{server_id} name={ctx.name} owner={ctx.owner or '-'}", True)
+        return {
+            "ok": True,
+            "server": ctx.to_public(),
+            "message": f"Serveur mis à jour · user {ctx.owner or '—'}",
+        }
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    except KeyError:
+        return JSONResponse({"ok": False, "error": "introuvable"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.delete("/api/servers/{server_id}")
+async def servers_delete(request: Request, server_id: str):
+    deny = require_admin(request)
+    if deny:
+        return deny
+    try:
+        srv.delete_server(server_id, remove_files=True)
+        pelican.log_activity("server.delete", f"{server_id} (wipe)", True)
+        return {
+            "ok": True,
+            "message": f"Serveur {server_id} supprimé (fichiers + service)",
+        }
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    except KeyError:
+        return JSONResponse({"ok": False, "error": "introuvable"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 @app.get("/api/admin/users")
@@ -735,7 +953,7 @@ async def post_config(request: Request):
     saved = save_config(current)
     out = ""
     if restart:
-        code, out = run_systemctl("restart", "gmod")
+        code, out = run_systemctl("restart", S().unit)
         ok = code == 0
     else:
         ok = True
@@ -758,7 +976,7 @@ async def start(request: Request):
         return deny
     write_start_script(load_config())
     write_server_cfg(load_config())
-    code, out = run_systemctl("start", "gmod")
+    code, out = run_systemctl("start", S().unit)
     pelican.log_activity("power.start", out[:200], code == 0)
     return {"ok": code == 0, "output": out, "status": server_status()}
 
@@ -768,7 +986,7 @@ async def stop(request: Request):
     deny = require_auth(request)
     if deny:
         return deny
-    code, out = run_systemctl("stop", "gmod")
+    code, out = run_systemctl("stop", S().unit)
     pelican.log_activity("power.stop", out[:200], code == 0)
     return {"ok": code == 0, "output": out, "status": server_status()}
 
@@ -780,7 +998,7 @@ async def restart(request: Request):
         return deny
     write_start_script(load_config())
     write_server_cfg(load_config())
-    code, out = run_systemctl("restart", "gmod")
+    code, out = run_systemctl("restart", S().unit)
     pelican.log_activity("power.restart", out[:200], code == 0)
     return {"ok": code == 0, "output": out, "status": server_status()}
 
@@ -790,7 +1008,7 @@ async def kill(request: Request):
     deny = require_auth(request)
     if deny:
         return deny
-    code, out = pelican.kill_gmod()
+    code, out = pelican.kill_gmod(S().unit)
     return {"ok": True, "output": out, "status": server_status(), "message": "Kill forcé"}
 
 
@@ -815,7 +1033,7 @@ async def backups_list(request: Request):
     deny = require_auth(request)
     if deny:
         return deny
-    return {"ok": True, "backups": pelican.list_backups()}
+    return {"ok": True, "backups": pelican.list_backups(backup_dir=S().backup_dir)}
 
 
 @app.post("/api/backups")
@@ -826,8 +1044,13 @@ async def backups_create(request: Request):
     body = await request.json()
     note = str(body.get("note") or "")
     try:
-        info = pelican.create_backup(note)
-        return {"ok": True, "backup": info, "backups": pelican.list_backups(), "message": f"Backup créé: {info['name']}"}
+        info = pelican.create_backup(note, gmod_dir=S().gmod_dir, backup_dir=S().backup_dir)
+        return {
+            "ok": True,
+            "backup": info,
+            "backups": pelican.list_backups(backup_dir=S().backup_dir),
+            "message": f"Backup créé: {info['name']}",
+        }
     except Exception as e:
         pelican.log_activity("backup.create", str(e), False)
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
@@ -841,8 +1064,8 @@ async def backups_delete(request: Request):
     body = await request.json()
     name = str(body.get("name") or "")
     try:
-        pelican.delete_backup(name)
-        return {"ok": True, "backups": pelican.list_backups(), "message": "Backup supprimé"}
+        pelican.delete_backup(name, backup_dir=S().backup_dir)
+        return {"ok": True, "backups": pelican.list_backups(backup_dir=S().backup_dir), "message": "Backup supprimé"}
     except FileNotFoundError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=404)
     except Exception as e:
@@ -856,15 +1079,14 @@ async def backups_restore(request: Request):
         return deny
     body = await request.json()
     name = str(body.get("name") or "")
-    # stop server before restore
-    run_systemctl("stop", "gmod")
+    run_systemctl("stop", S().unit)
     try:
-        pelican.restore_backup(name)
+        pelican.restore_backup(name, gmod_dir=S().gmod_dir, backup_dir=S().backup_dir)
         return {
             "ok": True,
             "message": "Backup restauré — redémarre le serveur",
             "status": server_status(),
-            "backups": pelican.list_backups(),
+            "backups": pelican.list_backups(backup_dir=S().backup_dir),
         }
     except Exception as e:
         pelican.log_activity("backup.restore", str(e), False)
@@ -878,9 +1100,9 @@ async def update_game(request: Request):
         return deny
     body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
     validate = bool((body or {}).get("validate", True))
-    run_systemctl("stop", "gmod")
+    run_systemctl("stop", S().unit)
     try:
-        out = pelican.steamcmd_update(validate=validate)
+        out = pelican.steamcmd_update(validate=validate, gmod_dir=S().gmod_dir)
         return {"ok": True, "message": "Mise à jour SteamCMD terminée", "output": out[-1500:], "status": server_status()}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
@@ -937,9 +1159,9 @@ def read_players_payload() -> dict:
     ranks = default_ranks
     updated = None
     stale = False
-    if PLAYERS_JSON.exists():
+    if S().players_json.exists():
         try:
-            data = json.loads(PLAYERS_JSON.read_text(encoding="utf-8"))
+            data = json.loads(S().players_json.read_text(encoding="utf-8"))
             players = data.get("players") or []
             updated = data.get("updated")
             # Si le serveur a hiberné, le JSON peut rester bloqué avec d'anciens joueurs
@@ -953,9 +1175,9 @@ def read_players_payload() -> dict:
                     pass
         except Exception:
             pass
-    if RANKS_JSON.exists():
+    if S().ranks_json.exists():
         try:
-            data = json.loads(RANKS_JSON.read_text(encoding="utf-8"))
+            data = json.loads(S().ranks_json.read_text(encoding="utf-8"))
             if data.get("ranks"):
                 ranks = data["ranks"]
         except Exception:
@@ -1072,7 +1294,7 @@ def files_safe_resolve(rel: str) -> Path:
     if rel in ("", "/"):
         rel = "."
     rel = rel.lstrip("/")
-    root = FILES_ROOT.resolve()
+    root = S().files_root.resolve()
     target = (root / rel).resolve()
     if target != root and root not in target.parents:
         raise PermissionError("chemin hors zone")
@@ -1080,7 +1302,7 @@ def files_safe_resolve(rel: str) -> Path:
 
 
 def files_rel_of(path: Path) -> str:
-    root = FILES_ROOT.resolve()
+    root = S().files_root.resolve()
     path = path.resolve()
     if path == root:
         return ""
@@ -1148,7 +1370,7 @@ async def list_files(request: Request, path: str = ""):
 
     return {
         "ok": True,
-        "root": str(FILES_ROOT),
+        "root": str(S().files_root),
         "path": rel,
         "parent": parent,
         "crumbs": crumbs,
@@ -1271,7 +1493,7 @@ async def delete_file(request: Request):
     except PermissionError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=403)
 
-    root = FILES_ROOT.resolve()
+    root = S().files_root.resolve()
     if target == root:
         return JSONResponse({"ok": False, "error": "impossible de supprimer la racine"}, status_code=400)
     if not target.exists():
@@ -1550,7 +1772,7 @@ async def rename_file(request: Request):
         safe_name = files_sanitize_name(new_name)
     except (PermissionError, ValueError) as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
-    if target == FILES_ROOT.resolve():
+    if target == S().files_root.resolve():
         return JSONResponse({"ok": False, "error": "impossible de renommer la racine"}, status_code=400)
     if not target.exists():
         return JSONResponse({"ok": False, "error": "introuvable"}, status_code=404)
@@ -1575,7 +1797,7 @@ async def compress_file(request: Request):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=403)
     if not target.exists():
         return JSONResponse({"ok": False, "error": "introuvable"}, status_code=404)
-    if target == FILES_ROOT.resolve():
+    if target == S().files_root.resolve():
         return JSONResponse({"ok": False, "error": "impossible de compresser la racine"}, status_code=400)
     zip_name = target.name + ".zip"
     dest = target.parent / zip_name
@@ -1629,11 +1851,24 @@ async def ws_console(websocket: WebSocket):
         await websocket.close()
         return
 
-    await websocket.send_json({"type": "info", "data": "Connexion console…"})
+    sid = websocket.query_params.get("server_id")
+    try:
+        ctx = srv.get_server_by_id(sid)
+    except Exception as e:
+        await websocket.send_json({"type": "error", "data": str(e)})
+        await websocket.close()
+        return
+    sess = parse_session(cookie) or {}
+    if not srv.user_can_access(ctx, str(sess.get("username") or ""), str(sess.get("role") or "user")):
+        await websocket.send_json({"type": "error", "data": "accès refusé à ce serveur"})
+        await websocket.close()
+        return
+    token = srv.set_current(ctx)
+    await websocket.send_json({"type": "info", "data": f"Console · {ctx.name} ({ctx.id})"})
     proc = await asyncio.create_subprocess_exec(
         "journalctl",
         "-u",
-        "gmod",
+        ctx.unit,
         "-f",
         "-n",
         "120",
@@ -1642,6 +1877,7 @@ async def ws_console(websocket: WebSocket):
         "cat",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
+        env={**os.environ, "SYSTEMD_COLORS": "0", "SYSTEMD_URLIFY": "0"},
     )
 
     async def pump_logs():
@@ -1650,7 +1886,7 @@ async def ws_console(websocket: WebSocket):
             line = await proc.stdout.readline()
             if not line:
                 break
-            text = line.decode("utf-8", errors="replace").rstrip()
+            text = strip_ansi(line.decode("utf-8", errors="replace")).rstrip()
             if text:
                 await websocket.send_json({"type": "log", "data": text})
 
@@ -1676,6 +1912,7 @@ async def ws_console(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
+        srv.reset_current(token)
         task.cancel()
         try:
             proc.terminate()

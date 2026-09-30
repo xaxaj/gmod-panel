@@ -14,7 +14,9 @@ from typing import Any, Callable, Optional
 
 BACKUP_DIR = Path("/home/steam/gmod-backups")
 ACTIVITY_FILE = Path("/opt/gmod-panel/activity.json")
-STEAMCMD = Path("/home/steam/gmod/steamcmd/steamcmd.sh")
+STEAMCMD = Path("/home/steam/steamcmd/steamcmd.sh")
+if not STEAMCMD.exists():
+    STEAMCMD = Path("/home/steam/gmod/steamcmd/steamcmd.sh")
 GMOD_DIR = Path("/home/steam/gmod")
 MAX_ACTIVITY = 200
 MAX_BACKUPS = 20
@@ -149,11 +151,12 @@ def _uptime_seconds() -> int:
         return 0
 
 
-def list_backups() -> list[dict]:
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    _steam_chown(BACKUP_DIR)
+def list_backups(backup_dir: Optional[Path] = None) -> list[dict]:
+    bdir = Path(backup_dir) if backup_dir else BACKUP_DIR
+    bdir.mkdir(parents=True, exist_ok=True)
+    _steam_chown(bdir)
     items = []
-    for p in sorted(BACKUP_DIR.glob("*.tar.gz"), key=lambda x: x.stat().st_mtime, reverse=True):
+    for p in sorted(bdir.glob("*.tar.gz"), key=lambda x: x.stat().st_mtime, reverse=True):
         st = p.stat()
         items.append({
             "name": p.name,
@@ -164,13 +167,18 @@ def list_backups() -> list[dict]:
     return items
 
 
-def create_backup(note: str = "") -> dict[str, Any]:
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+def create_backup(
+    note: str = "",
+    gmod_dir: Optional[Path] = None,
+    backup_dir: Optional[Path] = None,
+) -> dict[str, Any]:
+    gdir = Path(gmod_dir) if gmod_dir else GMOD_DIR
+    bdir = Path(backup_dir) if backup_dir else BACKUP_DIR
+    bdir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_note = re.sub(r"[^\w\-]+", "_", (note or "").strip())[:40].strip("_")
     name = f"gmod_{stamp}{('_' + safe_note) if safe_note else ''}.tar.gz"
-    dest = BACKUP_DIR / name
-    # Backup addons + cfg + darkrp data essentials (not full game binaries)
+    dest = bdir / name
     includes = [
         "garrysmod/addons",
         "garrysmod/cfg",
@@ -180,60 +188,72 @@ def create_backup(note: str = "") -> dict[str, Any]:
         "garrysmod/settings",
         "start.sh",
     ]
-    existing = [i for i in includes if (GMOD_DIR / i).exists()]
+    existing = [i for i in includes if (gdir / i).exists()]
     if not existing:
         raise RuntimeError("rien à sauvegarder")
-    cmd = ["tar", "-czf", str(dest), "-C", str(GMOD_DIR), *existing]
+    cmd = ["tar", "-czf", str(dest), "-C", str(gdir), *existing]
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if proc.returncode != 0 or not dest.exists():
         dest.unlink(missing_ok=True)
         raise RuntimeError((proc.stderr or proc.stdout or "échec tar")[-500:])
     _steam_chown(dest)
-    # prune old
-    all_b = sorted(BACKUP_DIR.glob("*.tar.gz"), key=lambda x: x.stat().st_mtime, reverse=True)
+    all_b = sorted(bdir.glob("*.tar.gz"), key=lambda x: x.stat().st_mtime, reverse=True)
     for old in all_b[MAX_BACKUPS:]:
         old.unlink(missing_ok=True)
     log_activity("backup.create", name, True)
     return {"name": name, "size": dest.stat().st_size}
 
 
-def delete_backup(name: str) -> None:
+def delete_backup(name: str, backup_dir: Optional[Path] = None) -> None:
+    bdir = Path(backup_dir) if backup_dir else BACKUP_DIR
     name = Path(name).name
     if not name.endswith(".tar.gz") or ".." in name:
         raise ValueError("nom invalide")
-    path = BACKUP_DIR / name
+    path = bdir / name
     if not path.exists():
         raise FileNotFoundError("backup introuvable")
     path.unlink()
     log_activity("backup.delete", name, True)
 
 
-def restore_backup(name: str) -> None:
+def restore_backup(
+    name: str,
+    gmod_dir: Optional[Path] = None,
+    backup_dir: Optional[Path] = None,
+) -> None:
+    gdir = Path(gmod_dir) if gmod_dir else GMOD_DIR
+    bdir = Path(backup_dir) if backup_dir else BACKUP_DIR
     name = Path(name).name
     if not name.endswith(".tar.gz") or ".." in name:
         raise ValueError("nom invalide")
-    path = BACKUP_DIR / name
+    path = bdir / name
     if not path.exists():
         raise FileNotFoundError("backup introuvable")
     proc = subprocess.run(
-        ["tar", "-xzf", str(path), "-C", str(GMOD_DIR)],
+        ["tar", "-xzf", str(path), "-C", str(gdir)],
         capture_output=True,
         text=True,
         timeout=600,
     )
     if proc.returncode != 0:
         raise RuntimeError((proc.stderr or proc.stdout or "échec restore")[-500:])
-    _steam_chown(GMOD_DIR / "garrysmod")
+    _steam_chown(gdir / "garrysmod")
     log_activity("backup.restore", name, True)
 
 
-def steamcmd_update(validate: bool = True) -> str:
-    if not STEAMCMD.exists():
-        raise FileNotFoundError(f"steamcmd introuvable: {STEAMCMD}")
+def steamcmd_update(
+    validate: bool = True,
+    gmod_dir: Optional[Path] = None,
+    steamcmd: Optional[Path] = None,
+) -> str:
+    gdir = Path(gmod_dir) if gmod_dir else GMOD_DIR
+    cmd_bin = Path(steamcmd) if steamcmd else STEAMCMD
+    if not cmd_bin.exists():
+        raise FileNotFoundError(f"steamcmd introuvable: {cmd_bin}")
     cmd = [
-        str(STEAMCMD),
+        str(cmd_bin),
         "+force_install_dir",
-        str(GMOD_DIR),
+        str(gdir),
         "+login",
         "anonymous",
         "+app_update",
@@ -246,7 +266,7 @@ def steamcmd_update(validate: bool = True) -> str:
     cmd.append("+quit")
     proc = subprocess.run(
         cmd,
-        cwd=str(STEAMCMD.parent),
+        cwd=str(cmd_bin.parent),
         capture_output=True,
         text=True,
         timeout=3600,
@@ -260,16 +280,14 @@ def steamcmd_update(validate: bool = True) -> str:
     return out[-3000:]
 
 
-def kill_gmod() -> tuple[int, str]:
-    # force kill srcds then stop unit
-    subprocess.run(["pkill", "-9", "-f", "srcds_"], capture_output=True, text=True)
+def kill_gmod(unit: str = "gmod") -> tuple[int, str]:
     proc = subprocess.run(
-        ["systemctl", "kill", "-s", "SIGKILL", "gmod"],
+        ["systemctl", "kill", "-s", "SIGKILL", unit],
         capture_output=True,
         text=True,
         timeout=30,
     )
-    subprocess.run(["systemctl", "stop", "gmod"], capture_output=True, text=True, timeout=30)
+    subprocess.run(["systemctl", "stop", unit], capture_output=True, text=True, timeout=30)
     out = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
-    log_activity("power.kill", out[:200], True)
+    log_activity("power.kill", f"{unit} {out[:180]}", True)
     return proc.returncode, out

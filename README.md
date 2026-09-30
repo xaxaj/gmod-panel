@@ -6,25 +6,26 @@ Inspiré des panels type Pterodactyl/Pelican, mais **focalisé GMod** et simple 
 
 ## Fonctionnalités
 
-- Start / stop / restart du service `gmod`
+- Multi-serveurs sous `/home/steam/servers/<id>`
+- Start / stop / restart / kill par serveur
 - Console live (WebSocket) + commandes RCON
 - Configuration serveur (hostname, map, Workshop, GSLT, FastDL…)
 - Explorateur de fichiers (upload, édition, archives)
 - Joueurs en ligne + grades
 - Backups, ressources CPU/RAM/disque, activité
-- **Comptes panel** : rôles `admin` / `user` (onglet Admin)
+- **Comptes panel** : rôles `admin` / `user` + assignation user ↔ serveur
 
 ## Prérequis
 
 - Debian / Ubuntu (root)
 - Python 3.11+
-- Un serveur GMod déjà installé (SteamCMD) — par défaut : `/home/steam/gmod`
-- Service systemd `gmod` pour le DS (optionnel mais recommandé)
+- Un serveur GMod déjà installé (SteamCMD) — par défaut : `/home/steam/servers/main`
+- Service systemd `gmod` / `gmod-<id>` pour le DS (optionnel mais recommandé)
 
 ## Installation rapide
 
 ```bash
-git clone https://github.com/TON_COMPTE/gmod-panel.git /opt/gmod-panel
+git clone https://github.com/xaxaj/gmod-panel.git /opt/gmod-panel
 cd /opt/gmod-panel
 sudo bash install.sh
 ```
@@ -49,9 +50,12 @@ Connecté en **admin** :
 
 1. Onglet **Admin** → créer des comptes (`admin` ou `user`)
 2. Réinitialiser / supprimer des utilisateurs
-3. Chaque compte change son propre mot de passe dans **Mot de passe**
+3. **Serveurs GMod** → ajouter plusieurs instances (dossier + port + unité systemd)
+4. Chaque compte change son propre mot de passe dans **Mot de passe**
 
-Les utilisateurs `user` ont accès au panel serveur ; seuls les `admin` gèrent les comptes.
+Le sélecteur **Serveur** en haut du panel change l’instance active (console, config, fichiers, backups…).
+
+Les utilisateurs `user` ont accès au panel serveur ; seuls les `admin` gèrent les comptes et les instances.
 
 ## Mise à jour
 
@@ -70,9 +74,10 @@ sudo systemctl restart gmod-panel
 
 ## Roadmap (pas encore inclus)
 
-- Multi-serveurs / multi-nodes façon Pterodactyl
-- Installateur SteamCMD GMod intégré
-- 2FA, ACL par onglet
+- Installateur SteamCMD GMod intégré à la création d’instance
+- ACL par serveur / par onglet
+- 2FA
+- Nodes distants façon Pterodactyl Wings
 
 ## Licence
 

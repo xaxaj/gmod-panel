@@ -1,3 +1,5 @@
+servers.json
+data/
 .env
 users.json
 activity.json
