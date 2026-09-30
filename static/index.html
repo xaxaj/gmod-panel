@@ -1883,7 +1883,7 @@
             <div class="card-head">
               <div>
                 <h2>Explorateur de fichiers</h2>
-                <p>Lecture dans le dossier du serveur sélectionné</p>
+                <p>Accès limité à <code>garrysmod/</code> (addons, cfg, lua…)</p>
               </div>
               <div class="actions">
                 <label class="btn btn-primary" style="cursor:pointer;margin:0">
@@ -2356,6 +2356,9 @@
       if (dashTimer) { clearInterval(dashTimer); dashTimer = null; }
       dashView.classList.add("hidden");
       currentServerId = id;
+      filesPath = "";
+      filesParent = "";
+      filesSelected = "";
       try { localStorage.setItem("x_panel_server", id); } catch (_) {}
       if (!skipRoute) setRoute(`/servers/${encodeURIComponent(id)}`, { replace });
       showApp();

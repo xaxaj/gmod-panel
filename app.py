@@ -1399,8 +1399,19 @@ async def list_files(request: Request, path: str = ""):
     deny = require_auth(request)
     if deny:
         return deny
+    # Créer garrysmod si absent (serveur tout juste créé)
     try:
-        target = files_safe_resolve(path)
+        S().files_root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    # Anciens chemins UI du type "garrysmod/addons" → "addons"
+    rel_in = (path or "").replace("\\", "/").strip().lstrip("/")
+    if rel_in == "garrysmod":
+        rel_in = ""
+    elif rel_in.startswith("garrysmod/"):
+        rel_in = rel_in[len("garrysmod/") :]
+    try:
+        target = files_safe_resolve(rel_in)
     except PermissionError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=403)
     if not target.exists():
@@ -1436,7 +1447,7 @@ async def list_files(request: Request, path: str = ""):
         parent_path = target.parent
         parent = files_rel_of(parent_path)
 
-    crumbs = [{"name": "gmod", "path": ""}]
+    crumbs = [{"name": "garrysmod", "path": ""}]
     if rel:
         acc = []
         for part in rel.split("/"):

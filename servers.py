@@ -57,7 +57,8 @@ class ServerCtx:
 
     @property
     def files_root(self) -> Path:
-        return self.gmod_dir
+        """Explorateur limité à garrysmod/ (addons, cfg, lua…)."""
+        return self.gmod_dir / "garrysmod"
 
     @property
     def backup_dir(self) -> Path:
