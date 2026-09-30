@@ -3033,7 +3033,30 @@
         "Lancer / relancer l’installation GMod via SteamCMD ?\nÇa peut prendre 5–20 minutes.",
         { title: "Installer GMod", okText: "Lancer →" }
       )) return;
-      action("/api/install");
+      setBusy(true);
+      try {
+        appendLog("> INSTALL", "log-cmd");
+        let { res, data } = await api("/api/install", { method: "POST" });
+        // Ancien process pas redémarré → fallback update SteamCMD
+        if (res.status === 404) {
+          appendLog("API install absente — fallback /api/update (redémarre gmod-panel après git pull)", "log-warn");
+          ({ res, data } = await api("/api/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ validate: true }),
+          }));
+        }
+        if (data.error) appendLog(data.error, "log-error");
+        if (data.message) appendLog(data.message, "log-info");
+        if (data.output) appendLog(data.output, "log-info");
+        if (data.status) renderStatus(data.status);
+        else await refreshStatus();
+        if (!res.ok && !data.error) appendLog(`HTTP ${res.status}`, "log-error");
+      } catch (e) {
+        appendLog(String(e.message || e), "log-error");
+      } finally {
+        setBusy(false);
+      }
     });
     $("btnRefreshPlayers").onclick = () => refreshPlayers().catch(() => {});
     $("btnFilesRefresh").onclick = () => loadFiles(filesPath).catch(() => {});
