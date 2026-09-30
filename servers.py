@@ -471,14 +471,13 @@ def _safe_rmtree(path: Path) -> None:
 
 def delete_server(server_id: str, *, remove_files: bool = True) -> None:
     rows = load_registry()
-    if len(rows) <= 1:
-        raise ValueError("il doit rester au moins 1 serveur")
     target = next((r for r in rows if r["id"] == server_id), None)
     if not target:
         raise KeyError("serveur introuvable")
     ctx = row_to_ctx(target)
 
     # Arrêt forcé + désactivation
+    ensure_steam_user()
     subprocess.run(
         ["systemctl", "kill", "-s", "SIGKILL", ctx.unit],
         capture_output=True, text=True, timeout=30,

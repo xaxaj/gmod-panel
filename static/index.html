@@ -1304,7 +1304,7 @@
     #modalOverlay {
       position: fixed;
       inset: 0;
-      z-index: 200;
+      z-index: 9999;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -3584,7 +3584,7 @@
                 <button class="sp-link" type="button" data-use="${escapeHtml(s.id)}">Ouvrir</button>
                 <button class="sp-link" type="button" data-rename="${escapeHtml(s.id)}" data-name="${escapeHtml(s.name || s.id)}">Renommer</button>
                 <button class="sp-link" type="button" data-owner="${escapeHtml(s.id)}" data-owner-name="${escapeHtml(owner)}">User</button>
-                <button class="sp-link danger" type="button" data-rm-server="${escapeHtml(s.id)}" ${servers.length <= 1 ? "disabled" : ""}>Supprimer</button>
+                <button class="sp-link danger" type="button" data-rm-server="${escapeHtml(s.id)}">Supprimer</button>
               </div></td>
             </tr>`;
           }).join("")}
@@ -3610,17 +3610,36 @@
         btn.addEventListener("click", () => changeServerOwner(btn.dataset.owner, btn.dataset.ownerName || ""));
       });
       list.querySelectorAll("[data-rm-server]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          if (!await openConfirm(
-            `Supprimer définitivement « ${btn.dataset.rmServer} » ?\nService arrêté, fichiers et unité systemd effacés.`,
+        btn.addEventListener("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const sid = btn.dataset.rmServer;
+          if (!sid) return;
+          const ok = await openConfirm(
+            `Supprimer définitivement « ${sid} » ?\nService arrêté, fichiers et unité systemd effacés.`,
             { title: "Supprimer le serveur", okText: "Supprimer →", danger: true }
-          )) return;
+          );
+          if (!ok) return;
           const toast = $("adminServerToast");
-          const { res, data } = await api(`/api/servers/${encodeURIComponent(btn.dataset.rmServer)}`, { method: "DELETE" });
-          toast.className = res.ok && data.ok ? "toast" : "toast err";
-          toast.textContent = data.message || data.error || "…";
-          await loadServers();
-          refreshAdminServers().catch(() => {});
+          try {
+            const { res, data } = await api(`/api/servers/${encodeURIComponent(sid)}`, { method: "DELETE" });
+            if (toast) {
+              toast.className = res.ok && data.ok ? "toast" : "toast err";
+              toast.textContent = data.message || data.error || "…";
+            }
+            if (!res.ok || !data.ok) return;
+            if (currentServerId === sid) {
+              currentServerId = "";
+              try { localStorage.removeItem("x_panel_server"); } catch (_) {}
+            }
+            await loadServers();
+            await refreshAdminServers();
+          } catch (err) {
+            if (toast) {
+              toast.className = "toast err";
+              toast.textContent = String(err.message || err);
+            }
+          }
         });
       });
     }

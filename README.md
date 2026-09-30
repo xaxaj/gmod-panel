@@ -30,9 +30,22 @@ cd /opt/gmod-panel
 sudo bash install.sh
 ```
 
-Le script crée un venv, un `.env`, le service `gmod-panel`, et un compte **admin** (mot de passe affiché une fois).
+Le script :
+- crée l’utilisateur système **steam**
+- installe le venv + service `gmod-panel`
+- démarre avec **aucun serveur** (tu en crées un dans Admin → Server)
+- affiche le mot de passe **admin** une fois
 
-Ouvre `http://IP:8080` → connecte-toi → change le mot de passe.
+Ouvre `http://IP:8080` → login → Admin → Server → Ajouter.
+
+### Réinstallation propre
+
+```bash
+systemctl stop gmod-panel || true
+rm -rf /opt/gmod-panel
+git clone https://github.com/xaxaj/gmod-panel.git /opt/gmod-panel
+cd /opt/gmod-panel && sudo bash install.sh
+```
 
 ### Variables `.env`
 

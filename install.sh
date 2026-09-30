@@ -3,7 +3,7 @@
 set -euo pipefail
 
 PANEL_DIR="${PANEL_DIR:-/opt/gmod-panel}"
-GMOD_DIR="${GMOD_DIR:-/home/steam/gmod}"
+GMOD_DIR="${GMOD_DIR:-/home/steam/servers/main}"
 PANEL_PORT="${PANEL_PORT:-8080}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -14,13 +14,24 @@ fi
 echo "==> Dépendances système"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y python3 python3-venv python3-pip curl ca-certificates
+apt-get install -y python3 python3-venv python3-pip curl ca-certificates rsync
+
+echo "==> Utilisateur système steam (requis pour systemd GMod)"
+if ! id steam &>/dev/null; then
+  useradd --system --create-home --home-dir /home/steam --shell /usr/sbin/nologin steam
+  echo "    steam créé"
+else
+  echo "    steam déjà présent"
+fi
+mkdir -p /home/steam/servers
+chown -R steam:steam /home/steam
 
 echo "==> Dossier panel : $PANEL_DIR"
 mkdir -p "$PANEL_DIR"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ "$SCRIPT_DIR" != "$PANEL_DIR" ]]; then
-  rsync -a --exclude venv --exclude .env --exclude users.json --exclude __pycache__ \
+  rsync -a --exclude venv --exclude .env --exclude users.json --exclude servers.json \
+    --exclude activity.json --exclude data --exclude __pycache__ --exclude .git \
     "$SCRIPT_DIR"/ "$PANEL_DIR"/
 fi
 
@@ -53,18 +64,13 @@ else
   echo "==> .env déjà présent — conservé"
 fi
 
-echo "==> Utilisateur système steam (requis pour les serveurs GMod)"
-if ! id steam &>/dev/null; then
-  useradd --system --create-home --home-dir /home/steam --shell /usr/sbin/nologin steam
-  echo "    utilisateur steam créé"
-else
-  echo "    steam déjà présent"
+# Registre serveurs vide au premier boot (pas de serveur fantôme)
+if [[ ! -f servers.json ]]; then
+  echo '{"servers":[]}' > servers.json
+  chmod 600 servers.json
 fi
-mkdir -p /home/steam/servers
-chown -R steam:steam /home/steam 2>/dev/null || true
-
-mkdir -p "$(dirname "$GMOD_DIR")"
-# Ne crée pas le serveur GMod ici : ajoute-le via Admin → Server dans le panel.
+mkdir -p data
+chown -R root:root "$PANEL_DIR" 2>/dev/null || true
 
 if [[ -f systemd/gmod-panel.service ]]; then
   sed "s|/opt/gmod-panel|${PANEL_DIR}|g" systemd/gmod-panel.service \
@@ -78,4 +84,5 @@ IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 echo ""
 echo "Panel : http://${IP:-TON_IP}:${PANEL_PORT}"
 echo "Login : admin + mot de passe ci-dessus (ou celui de ton .env)"
+echo "Ensuite : Admin → Server → Ajouter un serveur"
 echo "Done."
