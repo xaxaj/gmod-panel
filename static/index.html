@@ -2203,11 +2203,14 @@
         } else if (!lastGameInstalled) {
           hint.textContent = "GMod pas encore installé — clique Installer GMod";
           hint.title = "";
+        } else if (running) {
+          hint.textContent = "Serveur en ligne.";
+          hint.title = "";
         } else if (job.status === "ok") {
-          hint.textContent = "GMod installé — tu peux Start.";
+          hint.textContent = "GMod installé — clique Start.";
           hint.title = "";
         } else {
-          hint.textContent = "Start, stop, restart — comme sur ton espace client.";
+          hint.textContent = "Serveur arrêté — Start / Stop / Restart.";
           hint.title = "";
         }
       }
