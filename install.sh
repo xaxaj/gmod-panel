@@ -14,7 +14,11 @@ fi
 echo "==> Dépendances système"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y python3 python3-venv python3-pip curl ca-certificates rsync
+apt-get install -y python3 python3-venv python3-pip curl ca-certificates rsync \
+  lib32gcc-s1 lib32stdc++6 libc6-i386 2>/dev/null \
+  || apt-get install -y python3 python3-venv python3-pip curl ca-certificates rsync \
+       lib32gcc1 lib32stdc++6 libc6-i386 2>/dev/null \
+  || apt-get install -y python3 python3-venv python3-pip curl ca-certificates rsync
 
 echo "==> Utilisateur système steam (requis pour systemd GMod)"
 if ! id steam &>/dev/null; then
@@ -23,8 +27,21 @@ if ! id steam &>/dev/null; then
 else
   echo "    steam déjà présent"
 fi
-mkdir -p /home/steam/servers
+mkdir -p /home/steam/servers /home/steam/steamcmd
 chown -R steam:steam /home/steam
+
+echo "==> SteamCMD (si absent)"
+if [[ ! -x /home/steam/steamcmd/steamcmd.sh ]]; then
+  curl -fsSL -o /tmp/steamcmd_linux.tar.gz \
+    https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz
+  tar -xzf /tmp/steamcmd_linux.tar.gz -C /home/steam/steamcmd
+  rm -f /tmp/steamcmd_linux.tar.gz
+  chown -R steam:steam /home/steam/steamcmd
+  runuser -u steam -- /home/steam/steamcmd/steamcmd.sh +quit || true
+  echo "    steamcmd installé"
+else
+  echo "    steamcmd déjà présent"
+fi
 
 echo "==> Dossier panel : $PANEL_DIR"
 mkdir -p "$PANEL_DIR"

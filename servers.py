@@ -256,7 +256,9 @@ Group=steam
 WorkingDirectory={ctx.gmod_dir}
 ExecStart={ctx.start_sh}
 Restart=on-failure
-RestartSec=10
+RestartSec=8
+StartLimitIntervalSec=120
+StartLimitBurst=3
 LimitNOFILE=100000
 
 [Install]
@@ -320,8 +322,10 @@ def clone_game_files(src: Path, dest: Path) -> None:
 
 def install_gmod(dest: Path, *, prefer_clone_from: Optional[Path] = None) -> str:
     """Installe GMod dans dest : clone depuis un serveur existant, sinon SteamCMD."""
+    import pelican_ext as pelican
+
     dest = Path(dest)
-    if (dest / "srcds_run_x64").exists() or (dest / "srcds_linux").exists():
+    if pelican.has_gmod_bin(dest):
         return "déjà installé"
     # Cherche un template
     template = prefer_clone_from
@@ -330,15 +334,13 @@ def install_gmod(dest: Path, *, prefer_clone_from: Optional[Path] = None) -> str
             p = Path(row.get("gmod_dir") or "")
             if p.resolve() == dest.resolve():
                 continue
-            if (p / "srcds_run_x64").exists() or (p / "srcds_linux").exists():
+            if pelican.has_gmod_bin(p):
                 template = p
                 break
     if template is not None:
         clone_game_files(template, dest)
         return f"cloné depuis {template}"
-    # SteamCMD
-    import pelican_ext as pelican
-
+    pelican.ensure_steamcmd()
     pelican.steamcmd_update(validate=True, gmod_dir=dest)
     return "installé via SteamCMD"
 

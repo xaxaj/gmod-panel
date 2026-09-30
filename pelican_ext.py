@@ -14,12 +14,24 @@ from typing import Any, Callable, Optional
 
 BACKUP_DIR = Path("/home/steam/gmod-backups")
 ACTIVITY_FILE = Path("/opt/gmod-panel/activity.json")
-STEAMCMD = Path("/home/steam/steamcmd/steamcmd.sh")
-if not STEAMCMD.exists():
-    STEAMCMD = Path("/home/steam/gmod/steamcmd/steamcmd.sh")
+STEAMCMD_DIR = Path("/home/steam/steamcmd")
+STEAMCMD = STEAMCMD_DIR / "steamcmd.sh"
 GMOD_DIR = Path("/home/steam/gmod")
 MAX_ACTIVITY = 200
 MAX_BACKUPS = 20
+STEAMCMD_URL = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz"
+
+# id serveur → {status: pending|running|ok|error, detail: str}
+_install_jobs: dict[str, dict[str, str]] = {}
+
+
+def get_install_job(server_id: str) -> dict[str, str]:
+    return dict(_install_jobs.get(server_id) or {})
+
+
+def has_gmod_bin(gmod_dir: Path) -> bool:
+    gdir = Path(gmod_dir)
+    return (gdir / "srcds_run_x64").exists() or (gdir / "srcds_linux").exists()
 
 
 def _steam_chown(path: Path) -> None:
@@ -241,13 +253,72 @@ def restore_backup(
     log_activity("backup.restore", name, True)
 
 
+def ensure_steamcmd() -> Path:
+    """Installe SteamCMD sous /home/steam/steamcmd si besoin."""
+    import pwd
+
+    cmd = STEAMCMD
+    if cmd.exists():
+        return cmd
+
+    legacy = Path("/home/steam/gmod/steamcmd/steamcmd.sh")
+    if legacy.exists():
+        return legacy
+
+    STEAMCMD_DIR.mkdir(parents=True, exist_ok=True)
+    tar_path = STEAMCMD_DIR / "steamcmd_linux.tar.gz"
+    try:
+        subprocess.run(
+            ["curl", "-fsSL", "-o", str(tar_path), STEAMCMD_URL],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        subprocess.run(
+            ["tar", "-xzf", str(tar_path), "-C", str(STEAMCMD_DIR)],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except Exception as e:
+        raise RuntimeError(f"téléchargement SteamCMD échoué: {e}") from e
+    finally:
+        try:
+            tar_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    if not cmd.exists():
+        raise FileNotFoundError(f"steamcmd toujours introuvable: {cmd}")
+
+    try:
+        pwd.getpwnam("steam")
+        _steam_chown(STEAMCMD_DIR)
+        subprocess.run(
+            [str(cmd), "+quit"],
+            cwd=str(STEAMCMD_DIR),
+            capture_output=True,
+            text=True,
+            timeout=180,
+            user="steam",
+        )
+        _steam_chown(STEAMCMD_DIR)
+    except Exception:
+        pass
+    return cmd
+
+
 def steamcmd_update(
     validate: bool = True,
     gmod_dir: Optional[Path] = None,
     steamcmd: Optional[Path] = None,
 ) -> str:
     gdir = Path(gmod_dir) if gmod_dir else GMOD_DIR
-    cmd_bin = Path(steamcmd) if steamcmd else STEAMCMD
+    gdir.mkdir(parents=True, exist_ok=True)
+    _steam_chown(gdir)
+    cmd_bin = Path(steamcmd) if steamcmd else ensure_steamcmd()
     if not cmd_bin.exists():
         raise FileNotFoundError(f"steamcmd introuvable: {cmd_bin}")
     cmd = [
@@ -269,15 +340,49 @@ def steamcmd_update(
         cwd=str(cmd_bin.parent),
         capture_output=True,
         text=True,
-        timeout=3600,
+        timeout=7200,
         user="steam",
     )
     out = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
-    ok = proc.returncode == 0
-    log_activity("steamcmd.update", f"code={proc.returncode}", ok)
+    ok = proc.returncode == 0 and has_gmod_bin(gdir)
+    log_activity("steamcmd.update", f"code={proc.returncode} dir={gdir}", ok)
     if not ok:
-        raise RuntimeError(out[-2000:] or f"steamcmd exit {proc.returncode}")
+        raise RuntimeError(
+            (out[-1800:] if out else "")
+            or f"steamcmd exit {proc.returncode} — srcds toujours absent dans {gdir}"
+        )
+    _steam_chown(gdir)
     return out[-3000:]
+
+
+def start_gmod_install(server_id: str, gmod_dir: Path, installer: Callable[[Path], str]) -> dict[str, str]:
+    """Lance l'install GMod en arrière-plan (clone ou SteamCMD)."""
+    sid = str(server_id)
+    cur = _install_jobs.get(sid) or {}
+    if cur.get("status") == "running":
+        return dict(cur)
+    if has_gmod_bin(gmod_dir):
+        _install_jobs[sid] = {"status": "ok", "detail": "déjà installé"}
+        return dict(_install_jobs[sid])
+
+    import threading
+
+    _install_jobs[sid] = {"status": "running", "detail": "Téléchargement GMod (SteamCMD)…"}
+
+    def _run() -> None:
+        try:
+            ensure_steamcmd()
+            how = installer(Path(gmod_dir))
+            if not has_gmod_bin(gmod_dir):
+                raise RuntimeError("install terminée mais srcds_run_x64 introuvable")
+            _install_jobs[sid] = {"status": "ok", "detail": how}
+            log_activity("server.install", f"{sid}: {how}", True)
+        except Exception as e:
+            _install_jobs[sid] = {"status": "error", "detail": str(e)[-500:]}
+            log_activity("server.install", f"{sid}: {e}", False)
+
+    threading.Thread(target=_run, name=f"gmod-install-{sid}", daemon=True).start()
+    return dict(_install_jobs[sid])
 
 
 def kill_gmod(unit: str = "gmod") -> tuple[int, str]:

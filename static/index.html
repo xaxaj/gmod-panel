@@ -1589,7 +1589,7 @@
               </div>
               <div class="field full">
                 <div class="hint" style="font-size:.75rem;color:#64748b;line-height:1.45">
-                  À la création, GMod est installé automatiquement (copie depuis un serveur existant, sinon SteamCMD).
+                  À la création, GMod est téléchargé via SteamCMD (5–20 min). Attends que « Installer GMod » disparaisse / Start fonctionne avant de lancer.
                 </div>
                 <span class="toast" id="adminServerToast"></span>
               </div>
@@ -1700,13 +1700,14 @@
             <div class="card-head">
               <div>
                 <h2>Contrôle serveur</h2>
-                <p>Start, stop, restart — comme sur ton espace client.</p>
+                <p id="powerHint">Start, stop, restart — comme sur ton espace client.</p>
               </div>
               <div class="actions">
                 <button class="btn btn-primary" id="btnStart" type="button">Start →</button>
                 <button class="btn btn-danger" id="btnStop" type="button">Stop</button>
                 <button class="btn" id="btnRestart" type="button">Restart</button>
                 <button class="btn btn-danger" id="btnKill" type="button" title="Kill forcé (Pelican)">Kill</button>
+                <button class="btn" id="btnInstallGame" type="button" title="Télécharge GMod via SteamCMD">Installer GMod</button>
               </div>
             </div>
           </div>
@@ -2098,6 +2099,7 @@
 
     let powerBusy = false;
     let lastRunning = false;
+    let lastGameInstalled = false;
 
     function setBusy(busy) {
       powerBusy = !!busy;
@@ -2111,15 +2113,18 @@
       const stop = $("btnStop");
       const restart = $("btnRestart");
       const kill = $("btnKill");
+      const install = $("btnInstallGame");
       if (start) start.disabled = busy || running;
       if (stop) stop.disabled = busy || !running;
-      if (restart) restart.disabled = busy || !running;
+      if (restart) restart.disabled = busy || !running || !lastGameInstalled;
       if (kill) kill.disabled = busy || !running;
+      if (install) install.disabled = busy || lastGameInstalled;
     }
 
     function renderStatus(s) {
       const running = !!s.running;
       lastRunning = running;
+      lastGameInstalled = !!s.game_installed;
       const badge = $("statusBadge");
       badge.className = "status-badge" + (running ? "" : " off");
       $("stateLabel").textContent = running ? "EN LIGNE" : "ARRÊTÉ";
@@ -2138,6 +2143,19 @@
       $("mConnect").textContent = connectStr || "—";
       $("connectText").textContent = connectStr || "…";
       if (s.steam_connect) $("btnSteam").href = s.steam_connect;
+      const hint = $("powerHint");
+      const job = s.install || {};
+      if (hint) {
+        if (!lastGameInstalled && job.status === "running") {
+          hint.textContent = `Installation GMod en cours… ${job.detail || ""}`;
+        } else if (!lastGameInstalled && job.status === "error") {
+          hint.textContent = `Install échouée : ${job.detail || "erreur"} — clique Installer GMod`;
+        } else if (!lastGameInstalled) {
+          hint.textContent = "GMod pas encore installé — Start lance SteamCMD, ou clique Installer GMod";
+        } else {
+          hint.textContent = "Start, stop, restart — comme sur ton espace client.";
+        }
+      }
       syncPowerButtons();
     }
 
@@ -2299,11 +2317,14 @@
     async function action(path) {
       setBusy(true);
       try {
-        const { data } = await api(path, { method: "POST" });
+        const { res, data } = await api(path, { method: "POST" });
         appendLog(`> ${path.replace("/api/", "").toUpperCase()}`, "log-cmd");
-        if (data.output) appendLog(data.output, "log-info");
+        if (data.output) appendLog(data.output, data.ok === false ? "log-error" : "log-info");
+        if (data.error) appendLog(data.error, "log-error");
+        else if (data.message) appendLog(data.message, "log-info");
         if (data.status) renderStatus(data.status);
         else await refreshStatus();
+        if (!res.ok && !data.error) appendLog(`HTTP ${res.status}`, "log-error");
       } catch (e) {
         appendLog(String(e.message || e), "log-error");
       } finally {
@@ -3007,6 +3028,13 @@
       if (!await openConfirm("Kill forcé du process GMod ?", { title: "Kill", okText: "Kill →", danger: true })) return;
       action("/api/kill");
     };
+    $("btnInstallGame")?.addEventListener("click", async () => {
+      if (!await openConfirm(
+        "Lancer / relancer l’installation GMod via SteamCMD ?\nÇa peut prendre 5–20 minutes.",
+        { title: "Installer GMod", okText: "Lancer →" }
+      )) return;
+      action("/api/install");
+    });
     $("btnRefreshPlayers").onclick = () => refreshPlayers().catch(() => {});
     $("btnFilesRefresh").onclick = () => loadFiles(filesPath).catch(() => {});
     $("btnFilesUp").onclick = () => loadFiles(filesParent || "").catch(() => {});

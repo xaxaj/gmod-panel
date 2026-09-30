@@ -542,6 +542,8 @@ def server_status(*, force_rcon: bool = False) -> dict:
         "connect": f"{connect_ip}:{connect_port}",
         "steam_connect": f"steam://connect/{connect_ip}:{connect_port}",
         "server": S().to_public(),
+        "game_installed": pelican.has_gmod_bin(S().gmod_dir),
+        "install": pelican.get_install_job(S().id),
     }
     if running and rcon_password():
         sid = S().id
@@ -719,6 +721,8 @@ async def servers_list(request: Request):
                     "port": int(cfg.get("port") or 27015),
                     "hostname": cfg.get("hostname") or s.name,
                     "map": cfg.get("map") or "",
+                    "game_installed": pelican.has_gmod_bin(s.gmod_dir),
+                    "install": pelican.get_install_job(s.id),
                 }
             )
         finally:
@@ -759,22 +763,23 @@ async def servers_create(request: Request):
             cfg["port"] = port
             cfg["hostname"] = name or sid
             save_config(cfg)
-            # Installe GMod (clone depuis un serveur existant, sinon SteamCMD)
-            if not (ctx.gmod_dir / "srcds_run_x64").exists() and not (ctx.gmod_dir / "srcds_linux").exists():
-                try:
-                    how = srv.install_gmod(ctx.gmod_dir)
-                    write_start_script(cfg)
-                    write_server_cfg(cfg)
-                    install_note = f" + {how}"
-                except Exception as ie:
-                    install_note = f" (install à lancer : {ie})"
-                    pelican.log_activity("server.install", str(ie), False)
+            write_start_script(cfg)
+            write_server_cfg(cfg)
+            # Install GMod en arrière-plan (SteamCMD ou clone)
+            job = pelican.start_gmod_install(ctx.id, ctx.gmod_dir, lambda d: srv.install_gmod(d))
+            if job.get("status") == "ok":
+                install_note = f" + {job.get('detail') or 'installé'}"
+            elif job.get("status") == "running":
+                install_note = " — installation GMod lancée (SteamCMD, 5–20 min)"
+            else:
+                install_note = f" — install: {job.get('detail') or 'erreur'}"
         finally:
             srv.reset_current(token)
         pelican.log_activity("server.create", f"{ctx.id} owner={ctx.owner or '-'}", True)
         return {
             "ok": True,
             "server": ctx.to_public(),
+            "install": pelican.get_install_job(ctx.id),
             "message": f"Serveur {ctx.id} créé{install_note}",
         }
     except ValueError as e:
@@ -982,11 +987,53 @@ async def start(request: Request):
     deny = require_auth(request)
     if deny:
         return deny
+    ctx = S()
+    if not pelican.has_gmod_bin(ctx.gmod_dir):
+        job = pelican.get_install_job(ctx.id)
+        if job.get("status") != "running":
+            pelican.start_gmod_install(ctx.id, ctx.gmod_dir, lambda d: srv.install_gmod(d))
+            job = pelican.get_install_job(ctx.id)
+        detail = job.get("detail") or "installation…"
+        if job.get("status") == "error":
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": f"GMod non installé: {detail}",
+                    "status": server_status(),
+                    "install": job,
+                },
+                status_code=400,
+            )
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": f"GMod pas encore prêt ({detail}). Réessaie Start dans quelques minutes.",
+                "status": server_status(),
+                "install": job,
+            },
+            status_code=409,
+        )
     write_start_script(load_config())
     write_server_cfg(load_config())
-    code, out = run_systemctl("start", S().unit)
+    code, out = run_systemctl("start", ctx.unit)
     pelican.log_activity("power.start", out[:200], code == 0)
     return {"ok": code == 0, "output": out, "status": server_status()}
+
+
+@app.post("/api/install")
+async def install_game(request: Request):
+    """Relance l'installation GMod (SteamCMD / clone) pour le serveur courant."""
+    deny = require_auth(request)
+    if deny:
+        return deny
+    ctx = S()
+    job = pelican.start_gmod_install(ctx.id, ctx.gmod_dir, lambda d: srv.install_gmod(d))
+    return {
+        "ok": True,
+        "message": "Installation GMod lancée" if job.get("status") == "running" else job.get("detail") or "OK",
+        "install": job,
+        "status": server_status(),
+    }
 
 
 @app.post("/api/stop")
@@ -1004,9 +1051,15 @@ async def restart(request: Request):
     deny = require_auth(request)
     if deny:
         return deny
+    ctx = S()
+    if not pelican.has_gmod_bin(ctx.gmod_dir):
+        return JSONResponse(
+            {"ok": False, "error": "GMod non installé — lance Start ou Installer d’abord", "status": server_status()},
+            status_code=400,
+        )
     write_start_script(load_config())
     write_server_cfg(load_config())
-    code, out = run_systemctl("restart", S().unit)
+    code, out = run_systemctl("restart", ctx.unit)
     pelican.log_activity("power.restart", out[:200], code == 0)
     return {"ok": code == 0, "output": out, "status": server_status()}
 
