@@ -575,7 +575,7 @@ def server_status(*, force_rcon: bool = False) -> dict:
             try:
                 rcon = SourceRcon(RCON_HOST, connect_port, rcon_password(), timeout=3.0)
                 status = rcon.command("status")
-                parsed = {"hostname": None, "map": None, "players": None}
+                parsed = {"hostname": None, "map": None, "players": None, "uptime": None, "uptime_server": None}
                 for line in status.splitlines():
                     low = line.lower().strip()
                     if low.startswith("hostname:"):
@@ -584,6 +584,12 @@ def server_status(*, force_rcon: bool = False) -> dict:
                         parsed["map"] = line.split(":", 1)[1].strip() if ":" in line else line
                     elif "players" in low and ":" in line:
                         parsed["players"] = line.split(":", 1)[1].strip()
+                    elif low.startswith("uptime"):
+                        raw = line.split(":", 1)[1].strip() if ":" in line else line.strip()
+                        parsed["uptime"] = raw
+                        # "1s map, 11m 20s server" → garder surtout l'uptime serveur
+                        m = re.search(r",\s*([^,]+?)\s+server\s*$", raw, re.I)
+                        parsed["uptime_server"] = (m.group(1).strip() if m else raw)
                 _status_rcon_cache[sid] = (now, parsed)
                 for k, v in parsed.items():
                     if v is not None:
